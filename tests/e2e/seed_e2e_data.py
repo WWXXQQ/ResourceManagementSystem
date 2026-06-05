@@ -76,7 +76,7 @@ def main():
         "TEAM": [TEAM],
         "CARD_FORM": [BARE_METAL, INFERENCE_POOL],
         "CARD_TYPE": ["A100", "H100"],
-        "PROJECT": ["E2E-Shortage", "E2E-Execution"],
+        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution"],
         "REGION": [BEIJING],
     }
     for category, values in options.items():
@@ -118,6 +118,31 @@ def main():
         duration="7 days",
         status="PENDING_PRE",
         team_leader_note="approved",
+    )
+
+    Application.objects.create(
+        applicant=users["applicant"],
+        users="e2e_applicant",
+        team=TEAM,
+        cardForm=BARE_METAL,
+        cardType="A100",
+        purpose="E2E preempt donor",
+        project="E2E-Donor",
+        model_used="e2e-model",
+        priority="LOW",
+        priorityReason="E2E",
+        count=2,
+        minCount=1,
+        startDate=date.today(),
+        endDate=date.today() + timedelta(days=7),
+        duration="7 days",
+        status="EXECUTED",
+        allocatedCount=2,
+        allocatedCardType="A100",
+        allocatedCardForm=BARE_METAL,
+        allocatedRegion=BEIJING,
+        allocatedCardName="E2E-A100-Beijing-Pool",
+        executionResult="E2E donor already executed",
     )
 
     Application.objects.create(

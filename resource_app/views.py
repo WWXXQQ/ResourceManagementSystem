@@ -138,6 +138,24 @@ def refresh_asset_summary(asset):
     asset.save(update_fields=['used_cards', 'status', 'owner', 'current_users', 'app_name', 'updated_at'])
 
 
+def get_preempt_candidates(application):
+    """Find already allocated same-card applications available for coordination."""
+    same_card_type = (
+        Q(allocatedCardType=application.cardType) |
+        Q(allocatedCardType__isnull=True, cardType=application.cardType) |
+        Q(allocatedCardType='', cardType=application.cardType)
+    )
+    return Application.objects.filter(
+        same_card_type,
+        status__in=['APPROVED', 'EXECUTED'],
+        allocatedCount__gt=0
+    ).exclude(
+        id=application.id
+    ).exclude(
+        project=application.project
+    ).prefetch_related('asset_allocations__asset')
+
+
 @login_required
 def inventory_api(request):
     """AJAX API: 根据 cardType 和 cardForm 查询可用库存"""
@@ -841,23 +859,21 @@ def approve_view(request):
     # 所有项目名（用于筛选下拉，去重，在筛选之前获取以保证下拉菜单完整）
     all_projects = sorted(set(pending_apps.values_list('project', flat=True)))
 
-    # 为 PENDING_PRE 状态的申请单，附加 preempt_candidates
-    for app in pending_apps:
-        if app.status == 'PENDING_PRE':
-            # 按卡型号匹配可抽调的候选（不限形态，因为分配形态可能与申请形态不同）
-            app.preempt_candidates = Application.objects.filter(
-                status__in=['APPROVED', 'EXECUTED'],
-                allocatedCardType=app.cardType,
-                allocatedCount__gt=0
-            ).exclude(id=app.id).exclude(project=app.project).prefetch_related('asset_allocations__asset')
-
     # 需求汇总 — 支持按项目筛选，对整个 pending_apps 进行整页过滤
     filter_project = request.GET.get('filter_project', '')
     if filter_project:
         pending_apps = pending_apps.filter(project=filter_project)
 
+    pending_apps = list(pending_apps)
+
+    # 为 PENDING_PRE 状态的申请单，附加 preempt_candidates
+    for app in pending_apps:
+        if app.status == 'PENDING_PRE':
+            # 按卡型号匹配可抽调的候选（不限形态，因为分配形态可能与申请形态不同）
+            app.preempt_candidates = get_preempt_candidates(app)
+
     # 统计
-    total_apps_count = pending_apps.count()
+    total_apps_count = len(pending_apps)
     pre_allocated_apps_count = sum(1 for app in pending_apps if app.allocatedCount is not None and app.allocatedCount > 0)
     un_pre_allocated_apps_count = total_apps_count - pre_allocated_apps_count
     

@@ -53,6 +53,19 @@ test.describe('Resource management smoke and regression flows', () => {
     expect(errors).toEqual([]);
   });
 
+  test('approver sees executed same-card applications as preempt candidates after project filtering', async ({ page }) => {
+    const errors = collectClientErrors(page);
+
+    await login(page, 'e2e_approver', 'APPROVER', '预审人');
+    await page.goto(`${baseURL}/approve/?tab=pending&filter_project=E2E-Shortage`);
+
+    const preemptPanel = page.locator('[id^="preempt-panel-"]').first();
+    await expect(preemptPanel).toBeVisible();
+    await expect(preemptPanel).toContainText('E2E-Donor');
+    await expect(preemptPanel).not.toContainText('无法制定抽调方案');
+    expect(errors).toEqual([]);
+  });
+
   test('executor can bind an asset and mark an approved application executed', async ({ page }) => {
     const errors = collectClientErrors(page);
 
