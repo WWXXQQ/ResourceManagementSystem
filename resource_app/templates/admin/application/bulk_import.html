@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+        <h2>批量导入历史申请单</h2>
+        <div class="description" style="margin-bottom: 15px; padding: 12px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; line-height: 1.5;">
+            <p><strong>💡 格式说明：</strong></p>
+            <p>1. 请从 Excel 表格中复制包含数据的多行，直接粘贴到下方的文本框中。列与列之间使用 <strong>Tab 制表符</strong> 分隔（Excel 复制出来的默认格式）。</p>
+            <p>2. 首行如果是表头，系统会自动检测并忽略（如包含「项目名称」或「申请人」）。</p>
+            <p>3. 每行包含 14 列，格式顺序为（前 10 列为必填，后 4 列选填）：</p>
+            <code style="display: block; padding: 8px; background: #f1f3f5; border-radius: 4px; margin: 8px 0; font-family: monospace; font-size: 0.9em; border-left: 4px solid #6366f1;">
+                项目名称 [Tab] 申请人(用户名) [Tab] 使用人(逗号隔开) [Tab] 团队 [Tab] 申请型号 [Tab] 申请形态 [Tab] 数量 [Tab] 最少数量 [Tab] 优先级(高/中/低) [Tab] 状态(待审批/已审批/已驳回/已执行) [Tab] 申请用途 [Tab] 开始时间(YYYY-MM-DD) [Tab] 结束时间(YYYY-MM-DD) [Tab] 备注
+            </code>
+            <p>4. <strong>账号自动创建：</strong> 如果填写的申请人用户名在系统中不存在，系统会<b>自动创建该账号</b>，默认角色为“申请人”，初始化密码为 <code>123456</code>。</p>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="bulk_data" style="font-weight: bold;">粘贴 Excel/CSV 数据:</label>
+                <textarea name="bulk_data" id="bulk_data" rows="20" cols="100" placeholder="项目A	user1	user1,user2	开发部	A800	裸机	8	4	高	已执行	用于大模型微调训练	2026-05-01	2026-05-15	无特殊备注" required style="width: 95%; font-family: monospace; font-size: 0.9em; padding: 10px; border-radius: 4px; border: 1px solid #ccc;"></textarea>
+            </div>
+        </div>
+    </fieldset>
+    <div class="submit-row" style="background: #f8f9fa; padding: 12px; border-top: 1px solid #ddd;">
+        <input type="submit" value="执行批量导入" class="default" style="background: #6366f1; color: white; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer;">
+        <a href=".." class="button" style="display: inline-block; padding: 7px 15px; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: #333; margin-left: 10px; vertical-align: middle;">取消返回</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,356 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h1>执行管理</h1>
+    <!-- Tab toggles -->
+    <div style="display: flex; gap: 0.5rem; background: rgba(255,255,255,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--panel-border);">
+        <button id="tab-btn-pending" class="btn btn-secondary {% if active_tab == 'pending' %}active-tab{% endif %}" onclick="switchExecuteTab('pending')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">待执行</button>
+        <button id="tab-btn-history" class="btn btn-secondary {% if active_tab == 'history' %}active-tab{% endif %}" onclick="switchExecuteTab('history')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">已执行记录</button>
+    </div>
+</div>
+
+<style>
+.active-tab {
+    background: var(--accent-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+</style>
+
+<!-- 自动释放控制面板 -->
+{% if current_role == 'EXECUTOR' or current_role == 'ADMIN' %}
+<div class="glass-panel" style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-left: 4px solid {% if auto_release_enabled %}var(--success-color){% else %}var(--danger-color){% endif %};">
+    <div>
+        <h3 style="margin: 0 0 4px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+            🤖 自动释放已到期资源
+        </h3>
+        <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">
+            开启后，后台管理指令将自动回收并释放已超出截止日期（endDate）的已分配卡资源库存与绑定设备。默认为关闭状态。
+        </p>
+    </div>
+    <div>
+        <form method="post" action="{% url 'execute' %}" style="margin: 0; display: flex; align-items: center; gap: 12px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle_auto_release" />
+            <span style="font-size: 0.95rem; font-weight: bold; color: {% if auto_release_enabled %}var(--success-color){% else %}var(--danger-color){% endif %};">
+                {% if auto_release_enabled %}● 自动释放已开启{% else %}○ 自动释放已关闭{% endif %}
+            </span>
+            <button type="submit" class="btn {% if auto_release_enabled %}btn-secondary{% else %}btn-primary{% endif %}" style="padding: 6px 16px; font-size: 0.85rem; border-color: {% if auto_release_enabled %}var(--danger-color){% else %}var(--success-color){% endif %}; color: {% if auto_release_enabled %}var(--danger-color){% else %}white{% endif %}; background: {% if auto_release_enabled %}transparent{% else %}var(--success-color){% endif %};">
+                {% if auto_release_enabled %}关闭功能{% else %}开启功能{% endif %}
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Tab 1: Pending Execution -->
+<div id="tab-content-pending" style="{% if active_tab == 'history' %}display:none{% endif %}">
+    {% if urgent_apps %}
+    <!-- 紧急提醒区域 -->
+    <div class="glass-panel" style="margin-bottom: 2rem; border-left: 4px solid var(--danger-color);">
+        <h2 style="margin-bottom: 1rem; font-size: 1.25rem; color: var(--danger-color); display: flex; align-items: center; gap: 8px;">
+            ⚠ 紧急提醒：以下申请单即将到期或已过期
+        </h2>
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            {% for app in urgent_apps %}
+            <div style="padding: 16px; background: rgba(239, 68, 68, 0.08); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <strong>{{ app.project }}</strong> — {{ app.applicant.username }}
+                    <span style="color: var(--text-secondary); font-size: 0.9rem; margin-left: 8px;">
+                        {{ app.allocatedCardType }} x {{ app.allocatedCount }}张
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    {% if app.days_until_end < 0 %}
+                    <span style="background: var(--danger-color); color: white; padding: 3px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: bold;">
+                        已过期 {{ app.days_until_end|floatformat:0 }} 天
+                    </span>
+                    {% elif app.days_until_end == 0 %}
+                    <span style="background: var(--danger-color); color: white; padding: 3px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: bold;">
+                        今天到期
+                    </span>
+                    {% else %}
+                    <span style="background: var(--warning-color); color: #1a1c24; padding: 3px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: bold;">
+                        明天到期
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">已审批通过待执行申请单 ({{ approved_apps|length }})</h2>
+        {% if not approved_apps %}
+            <p style="color: var(--text-secondary);">太棒了，目前没有需要执行的申请！</p>
+        {% else %}
+            <div style="display: flex; flex-direction: column; gap: 2rem;">
+                {% for app in approved_apps %}
+                <div style="padding: 24px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid {% if app.is_urgent %}rgba(239, 68, 68, 0.3){% else %}var(--panel-border){% endif %};">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--panel-border); padding-bottom: 1rem; flex-wrap: wrap; gap: 8px;">
+                        <h3 style="margin: 0; color: var(--success-color); display: flex; align-items: center; gap: 10px;">
+                            {{ app.project }} - 分配执行
+                            {% if app.is_urgent %}
+                            <span style="background: var(--danger-color); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold;">
+                                {% if app.days_until_end < 0 %}已过期{% elif app.days_until_end == 0 %}今天到期{% else %}明天到期{% endif %}
+                            </span>
+                            {% endif %}
+                        </h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">审批时间: {{ app.updated_at|date:"Y-m-d H:i" }}</span>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; font-size: 0.95rem;">
+                        <div><span style="color: var(--text-secondary);">申请人:</span> {{ app.applicant.username }}</div>
+                        <div><span style="color: var(--text-secondary);">团队:</span> {{ app.team }}</div>
+                        <div style="grid-column: span 2;"><span style="color: var(--text-secondary);">使用人:</span> {{ app.users }}</div>
+                        <div>
+                            <span style="color: var(--text-secondary);">使用截止:</span>
+                            {% if app.endDate %}
+                                <strong>{{ app.endDate|date:"Y-m-d" }}</strong>
+                                {% if app.days_until_end is not None %}
+                                    {% if app.days_until_end > 0 %}
+                                    <span style="color: var(--success-color); font-size: 0.85rem;">(还剩 {{ app.days_until_end }} 天)</span>
+                                    {% elif app.days_until_end == 0 %}
+                                    <span style="color: var(--danger-color); font-size: 0.85rem; font-weight: bold;">(今天到期)</span>
+                                    {% else %}
+                                    <span style="color: var(--danger-color); font-size: 0.85rem; font-weight: bold;">(已过期)</span>
+                                    {% endif %}
+                                {% endif %}
+                            {% else %}
+                                <span style="color: var(--text-secondary);">未指定截止日期</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <span style="color: var(--text-secondary);">使用时长:</span> {{ app.duration }}
+                        </div>
+                        
+                        {% if app.attachment %}
+                        <div style="grid-column: span 2; display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; flex-direction: column;">
+                            <span style="color: var(--text-secondary); flex-shrink: 0;">附件图片:</span>
+                            <div style="display: flex; gap: 12px; align-items: flex-end;">
+                                <div style="max-width: 150px; border-radius: 6px; overflow: hidden; border: 1px solid var(--panel-border);">
+                                    <img src="{{ app.attachment.url }}" alt="附件" style="width: 100%; height: auto; display: block; cursor: pointer; transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" />
+                                </div>
+                                <a href="{{ app.attachment.url }}" download style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--panel-border); padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                                    📥 下载图片
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <div style="grid-column: span 2; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 0.5rem;">
+                            <h4 style="margin: 0 0 8px 0; color: var(--success-color);">审批结果 (请按此分配)</h4>
+                            <div>分配卡资源名称: <strong>{{ app.allocatedCardName|default:"-" }}</strong></div>
+                            <div>分配形态: <strong>{{ app.allocatedCardForm }}</strong></div>
+                            <div>分配型号: <strong>{{ app.allocatedCardType }}</strong></div>
+                            <div>分配地域: <strong>{{ app.allocatedRegion|default:"-" }}</strong></div>
+                            <div>分配数量: <strong>{{ app.allocatedCount }}</strong></div>
+                            <div>审批意见: {{ app.approvalNote|default:"无" }}</div>
+                            {% if app.team_leader_note %}
+                            <div style="margin-top: 6px; border-top: 1px dashed rgba(16, 185, 129, 0.2); padding-top: 6px;"><span style="color: var(--text-secondary);">组长审批意见:</span> {{ app.team_leader_note }}</div>
+                            {% endif %}
+                            {% if app.pre_approver_note %}
+                            <div style="margin-top: 6px; border-top: 1px dashed rgba(16, 185, 129, 0.2); padding-top: 6px;"><span style="color: var(--text-secondary);">预审意见:</span> {{ app.pre_approver_note }}</div>
+                            {% endif %}
+                            {% if app.final_approver_note %}
+                            <div style="margin-top: 6px; border-top: 1px dashed rgba(16, 185, 129, 0.2); padding-top: 6px;"><span style="color: var(--text-secondary);">部门负责人终审意见:</span> {{ app.final_approver_note }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <form method="post" action="{% url 'execute' %}" style="display: flex; flex-direction: column; gap: 1rem;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="execute" />
+                        <input type="hidden" name="app_id" value="{{ app.id }}" />
+
+                        {% if app.coord_objs %}
+                        <div style="background: rgba(245, 158, 11, 0.05); padding: 16px; border-radius: 8px; border: 1px dashed rgba(245, 158, 11, 0.4);">
+                            <h4 style="margin-top: 0; margin-bottom: 1rem; color: var(--warning-color); display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 1.2rem;">⚠️</span> 紧急抽调物理资源剥夺
+                            </h4>
+                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                                此申请包含预审制定的紧急资源抽调方案。作为执行人，您必须从以下旧工单中勾选指定数量的物理机器进行剥夺。勾选的机器将被解绑，并自动供下方新单绑定。
+                            </p>
+                            
+                            {% for cand in app.coord_objs %}
+                            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 8px;">
+                                <div style="margin-bottom: 8px; font-weight: bold; font-size: 0.95rem;">
+                                    从项目 <span style="color: var(--accent-color);">{{ cand.project }}</span> (单号: #{{ cand.app_id }}) 抽调 <span style="color: var(--danger-color);">{{ cand.count }}</span> 台
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                    {% for asset in cand.assets %}
+                                    <div style="display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.1);">
+                                        <input type="checkbox" name="preempted_assets_{{ cand.app_id }}" value="{{ asset.id }}" class="preempt-checkbox-{{ app.id }}-{{ cand.app_id }}" onchange="toggleCardInput(this, 'preempt_card_{{ cand.app_id }}_{{ asset.id }}'); checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }})" style="cursor: pointer; width: auto;" />
+                                        <span><strong>{{ asset.name }}</strong> {% if asset.ip %}(IP: {{ asset.ip }}){% endif %} - 占用: {{ asset.allocated_cards }}卡</span>
+                                        <input type="number" name="preempt_card_{{ cand.app_id }}_{{ asset.id }}" id="preempt_card_{{ cand.app_id }}_{{ asset.id }}" class="form-control preempt-input-{{ app.id }}-{{ cand.app_id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.allocated_cards }}" value="{{ asset.allocated_cards }}" disabled oninput="checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }})" />
+                                        <span id="preempt_label_{{ cand.app_id }}_{{ asset.id }}" style="display:none; font-size:0.8rem; color:var(--danger-color);">张</span>
+                                    </div>
+                                    {% empty %}
+                                    <span style="color: var(--danger-color); font-size: 0.85rem;">该旧项目名下无已绑定的物理资产，无法剥夺。</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div style="background: var(--panel-bg); padding: 16px; border-radius: 8px;">
+                            <h4 style="margin-top: 0; margin-bottom: 1rem;">填写执行结果</h4>
+                            <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                            
+                            <div style="flex: 1 1 100%; margin-bottom: 0.5rem;">
+                                <label class="form-label">关联物料设备资产 (可选，已自动匹配闲置状态的 {{ app.allocatedCardType }} / {{ app.allocatedCardForm }}，已分配 {{ app.allocatedCount }} 张卡)：</label>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 150px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); border-radius: 6px;">
+                                    {% for asset in app.idle_assets_matching %}
+                                    <div style="display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px; border-radius: 4px; {% if asset.status == 'PARTIAL' %}background: rgba(99, 102, 241, 0.1);{% else %}background: rgba(0,0,0,0.2);{% endif %}">
+                                        <input type="checkbox" name="selected_assets" value="{{ asset.id }}" class="asset-checkbox-{{ app.id }}" onchange="toggleCardInput(this, 'asset_card_{{ asset.id }}'); checkMaxSelected({{ app.id }}, {{ app.allocatedCount }})" style="cursor: pointer; width: auto;" />
+                                        <span><strong>{{ asset.name }}</strong> {% if asset.ip %}(IP: {{ asset.ip }}){% endif %} [总{{ asset.card_count }}卡/剩余 <span id="remain_{{ asset.id }}">{{ asset.remaining_cards }}</span>卡] {% if asset.specifications %}- {{ asset.specifications }}{% endif %}</span>
+                                        <input type="number" name="asset_card_{{ asset.id }}" id="asset_card_{{ asset.id }}" class="form-control asset-input-{{ app.id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.remaining_cards }}" value="{{ asset.remaining_cards }}" disabled oninput="checkMaxSelected({{ app.id }}, {{ app.allocatedCount }})" />
+                                        <span id="asset_label_{{ asset.id }}" style="display:none; font-size:0.8rem; color:var(--success-color);">张</span>
+                                    </div>
+                                    {% empty %}
+                                    <span style="color: var(--text-secondary); font-size: 0.9rem;">暂无可用闲置资产，您可以稍后在物料管理中手动指定。</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div style="flex: 1 1 100%;">
+                                <label class="form-label">执行结果说明 (例如：已分配服务器IP等信息)</label>
+                                <input type="text" name="executionResult" class="form-control" placeholder="如：已分配服务器 192.168.1.100..." required />
+                            </div>
+
+                            <div style="flex: 1 1 100%; margin-top: 1rem;">
+                                <button type="submit" class="btn btn-primary" style="background: var(--success-color); box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);">标记为已执行</button>
+                            </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Tab 2: Execution History -->
+<div id="tab-content-history" style="{% if active_tab != 'history' %}display:none{% endif %}">
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">已执行历史记录 (展示最近 50 条)</h2>
+        <div style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>受益项目</th>
+                        <th>申请人</th>
+                        <th>所在团队</th>
+                        <th>分配资源名称</th>
+                        <th>分配形态</th>
+                        <th>分配型号</th>
+                        <th>数量</th>
+                        <th>执行结果说明</th>
+                        <th>附件</th>
+                        <th>执行时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for app in executed_apps %}
+                    <tr>
+                        <td>
+                            <strong>{{ app.project }}</strong>
+                            {% if app.is_overdue %}
+                            <span style="display: block; font-size: 0.75rem; color: var(--danger-color); font-weight: bold; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); padding: 2px 4px; border-radius: 4px; margin-top: 4px; text-align: center; max-width: 60px; white-space: nowrap;">⚠️ 已逾期</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ app.applicant.username }}</td>
+                        <td>{{ app.team }}</td>
+                        <td>{{ app.allocatedCardName|default:"-" }}</td>
+                        <td>{{ app.allocatedCardForm }}</td>
+                        <td>{{ app.allocatedCardType }}</td>
+                        <td>{{ app.allocatedCount }}</td>
+                        <td style="max-width: 250px; word-break: break-all; color: var(--text-secondary);">{{ app.executionResult|default:"-" }}</td>
+                        <td>
+                            {% if app.attachment %}
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                <img src="{{ app.attachment.url }}" alt="附件" style="width: 40px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--panel-border); transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" />
+                                <a href="{{ app.attachment.url }}" download style="font-size: 0.7rem; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 2px;">
+                                    下载
+                                </a>
+                            </div>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ app.updated_at|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            {% if app.status == 'EXECUTED' %}
+                            <form method="post" action="{% url 'execute' %}" style="display: inline;" onsubmit="return confirm('确认要释放并归还此项目占用的卡资源库存吗？此操作将立即恢复对应库存数量！');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="release" />
+                                <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                <button type="submit" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--danger-color); color: var(--danger-color);">释放资源</button>
+                            </form>
+                            {% else %}
+                            <span style="color: var(--text-secondary); font-size: 0.85rem; background: rgba(255, 255, 255, 0.05); padding: 3px 8px; border-radius: 4px;">已释放归还</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 24px;">暂无已执行记录</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function checkExactSelected(checkbox, appId, candId, limit) {
+    const checkboxes = document.querySelectorAll(`.preempt-checkbox-${appId}-${candId}`);
+    let checkedCount = 0;
+    checkboxes.forEach(cb => {
+        if (cb.checked) checkedCount++;
+    });
+    if (checkedCount > limit) {
+        alert(`根据协调方案，该项目最多只能抽调 ${limit} 台机器！`);
+        checkbox.checked = false;
+    }
+}
+
+function checkMaxSelected(appId, maxCardCount, checkbox) {
+    const checkboxes = document.querySelectorAll('.asset-checkbox-' + appId);
+    const checked = Array.from(checkboxes).filter(cb => cb.checked);
+    let totalCards = 0;
+    checked.forEach(cb => {
+        totalCards += parseInt(cb.getAttribute('data-card-count')) || 1;
+    });
+    if (totalCards > maxCardCount) {
+        alert('选中设备的总卡数 (' + totalCards + ') 不能超过已分配卡数上限 (' + maxCardCount + ' 张)。');
+        checkbox.checked = false;
+    }
+}
+
+function switchExecuteTab(tabName) {
+    if (tabName === 'pending') {
+        document.getElementById('tab-btn-pending').classList.add('active-tab');
+        document.getElementById('tab-btn-history').classList.remove('active-tab');
+        document.getElementById('tab-content-pending').style.display = 'block';
+        document.getElementById('tab-content-history').style.display = 'none';
+    } else {
+        document.getElementById('tab-btn-pending').classList.remove('active-tab');
+        document.getElementById('tab-btn-history').classList.add('active-tab');
+        document.getElementById('tab-content-pending').style.display = 'none';
+        document.getElementById('tab-content-history').style.display = 'block';
+    }
+    // Update URL query parameter without page reload
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tabName);
+    window.history.pushState({}, '', url);
+}
+</script>
+{% endblock %}

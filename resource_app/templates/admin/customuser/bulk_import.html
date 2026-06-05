@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+        <h2>批量导入系统用户</h2>
+        <div class="description" style="margin-bottom: 15px; padding: 12px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; line-height: 1.8; color: #333;">
+            <p style="margin-top: 0;"><strong>💡 使用说明：</strong></p>
+            <p>1. 选择要导入用户的系统角色。</p>
+            <p>2. 在下方文本框中<strong>每行输入一个用户</strong>，支持以下三种格式：</p>
+            <table style="width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px;">
+                <thead>
+                    <tr style="background: #eee;">
+                        <th style="padding: 6px 10px; border: 1px solid #ccc; text-align: left;">格式</th>
+                        <th style="padding: 6px 10px; border: 1px solid #ccc; text-align: left;">示例</th>
+                        <th style="padding: 6px 10px; border: 1px solid #ccc; text-align: left;">说明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>用户名</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>zhangsan</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;">仅创建用户，团队和账号稍后再补</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>用户名,团队</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>lisi,语言智能</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;">创建用户并绑定团队（团队必须先在①下拉选项中配置）</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>用户名,团队,账号</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;"><code>wangwu,多模态研发,wangwu@example.com</code></td>
+                        <td style="padding: 6px 10px; border: 1px solid #ccc;">创建用户并同时绑定团队和通知账号（邮箱）</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="margin-bottom: 0;">3. 初始密码统一为 <code>123456</code>。重复的用户名自动忽略，已存在用户会自动补全缺失的团队/账号信息。</p>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="role" style="font-weight: bold; display: inline-block; width: 120px;">用户角色:</label>
+                <select name="role" id="role" required style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="APPLICANT">申请人 (APPLICANT)</option>
+                    <option value="TEAM_LEADER">组长 (TEAM_LEADER)</option>
+                    <option value="APPROVER">预审人/审批人 (APPROVER)</option>
+                    <option value="DEPT_HEAD">部门负责人 (DEPT_HEAD)</option>
+                    <option value="EXECUTOR">执行人 (EXECUTOR)</option>
+                    <option value="ADMIN">管理员 (ADMIN)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="bulk_data" style="font-weight: bold; display: block; margin-bottom: 8px;">用户列表（每行一个，支持上述三种格式混用）:</label>
+                <textarea name="bulk_data" id="bulk_data" rows="15" cols="60" placeholder="zhangsan&#10;lisi,语言智能&#10;wangwu,多模态研发,wangwu@example.com&#10;zhaoliu,,zhaoliu@example.com" required style="width: 95%; font-family: monospace; padding: 10px; border-radius: 4px; border: 1px solid #ccc;"></textarea>
+            </div>
+        </div>
+    </fieldset>
+    <div class="submit-row" style="background: #f8f9fa; padding: 12px; border-top: 1px solid #ddd;">
+        <input type="submit" value="执行批量导入" class="default" style="background: #6366f1; color: white; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer;">
+        <a href=".." class="button" style="display: inline-block; padding: 7px 15px; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: #333; margin-left: 10px; vertical-align: middle;">取消返回</a>
+    </div>
+</form>
+{% endblock %}
+

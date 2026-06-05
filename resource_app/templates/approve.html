@@ -1,0 +1,900 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h1>待办审批</h1>
+    <!-- Tab toggles -->
+    <div style="display: flex; gap: 0.5rem; background: rgba(255,255,255,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--panel-border);">
+        <button id="tab-btn-pending" class="btn btn-secondary {% if active_tab == 'pending' %}active-tab{% endif %}" onclick="switchApproveTab('pending')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">待审批</button>
+        <button id="tab-btn-history" class="btn btn-secondary {% if active_tab == 'history' %}active-tab{% endif %}" onclick="switchApproveTab('history')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">已审批记录</button>
+    </div>
+</div>
+
+<style>
+.active-tab {
+    background: var(--accent-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+.reject-modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+}
+.reject-modal-panel {
+    background: rgba(30, 32, 40, 0.95); backdrop-filter: blur(16px);
+    border: 1px solid var(--panel-border); border-radius: 16px;
+    padding: 32px; width: 100%; max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+</style>
+
+<!-- Tab 1: Pending Applications -->
+<div id="tab-content-pending" style="{% if active_tab == 'history' %}display:none{% endif %}">
+
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));">
+    <!-- 当前库存参考 -->
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+            当前库存参考
+            <span style="font-size: 0.8rem; color: var(--warning-color); font-weight: normal;">(审批前请核对防超额)</span>
+        </h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>卡资源型号</th>
+                    <th>卡资源形态</th>
+                    <th>总数量</th>
+                    <th>已分配</th>
+                    <th>已预分配</th>
+                    <th>预分配后可用</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in inventory_summary %}
+                <tr>
+                    <td><strong>{{ inv.cardType }}</strong></td>
+                    <td>{{ inv.cardForm }}</td>
+                    <td>{{ inv.totalCount }}</td>
+                    <td>{{ inv.allocatedCount }}</td>
+                    <td>{{ inv.preAllocatedCount }}</td>
+                    <td style="color: {% if inv.availableCount > 0 %}var(--success-color){% else %}var(--danger-color){% endif %}; font-weight: bold;">
+                        {{ inv.availableCount }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" style="text-align: center; color: var(--text-secondary);">暂无库存记录</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 申请需求总览 -->
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1rem; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+            申请需求总览
+            <span style="font-size: 0.8rem; color: var(--accent-color); font-weight: normal;">(待审批总览)</span>
+        </h2>
+        <!-- 项目筛选 -->
+        <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 12px;">
+            <label style="font-size: 0.9rem; color: var(--text-secondary);">按项目筛选：</label>
+            <select class="form-control" style="width: auto; min-width: 200px;" onchange="filterByProject(this.value)">
+                <option value="">全部项目</option>
+                {% for p in all_projects %}
+                <option value="{{ p }}" {% if filter_project == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+            {% if filter_project %}
+            <a href="?tab=pending" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">清除筛选</a>
+            {% endif %}
+        </div>
+        <div style="display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.95rem;">
+            <div>待审批单数: <strong style="color: var(--accent-color);">{{ total_apps_count }}</strong> 笔</div>
+            <div>已预分配: <strong style="color: var(--success-color);">{{ pre_allocated_apps_count }}</strong> 笔</div>
+            <div>未预分配: <strong style="color: var(--warning-color);">{{ un_pre_allocated_apps_count }}</strong> 笔</div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>资源型号/形态</th>
+                    <th>申请总量</th>
+                    <th>最少需求</th>
+                    <th>已预分配</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in demand_list %}
+                <tr>
+                    <td>{{ d.cardType }} ({{ d.cardForm }})</td>
+                    <td>{{ d.count }} 张</td>
+                    <td>{{ d.minCount }} 张</td>
+                    <td style="color: var(--success-color); font-weight: bold;">{{ d.pre_allocated }} 张</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" style="text-align: center; color: var(--text-secondary);">暂无待审批需求</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="glass-panel">
+    <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">待审批申请单 (按项目聚合)</h2>
+    {% if not grouped_apps %}
+        <p style="color: var(--text-secondary);">太棒了，目前没有需要审批的申请！</p>
+    {% else %}
+        <!-- 审批单列表筛选栏 -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap;">
+            <label style="font-size: 0.9rem; color: var(--text-secondary);">列表筛选：</label>
+            
+            <select id="filter-pending-project" class="form-control" style="width: auto; min-width: 180px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterPendingList()">
+                <option value="">所有项目</option>
+                {% for group in grouped_apps %}
+                <option value="{{ group.project }}">{{ group.project }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-pending-cardType" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterPendingList()">
+                <option value="">所有卡型号</option>
+                {% for t in card_types %}
+                <option value="{{ t.value }}">{{ t.value }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-pending-cardForm" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterPendingList()">
+                <option value="">所有形态</option>
+                {% for f in card_forms %}
+                <option value="{{ f.value }}">{{ f.value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 2.5rem;">
+            {% for group in grouped_apps %}
+            <div id="project-{{ group.project }}" class="project-group-container" data-project="{{ group.project }}" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--panel-border); border-radius: 12px; padding: 24px;">
+                <!-- Group Header -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 2px solid rgba(255,255,255,0.05); padding-bottom: 1rem; flex-wrap: wrap; gap: 12px;">
+                    <h3 style="margin: 0; font-size: 1.2rem; color: var(--text-primary); border-left: 4px solid var(--accent-color); padding-left: 12px;">
+                        项目：{{ group.project }}
+                    </h3>
+                    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                        <span style="font-size: 0.9rem; color: var(--text-secondary);">
+                            共 <strong style="color: var(--accent-color);">{{ group.count }}</strong> 笔申请，申请量合计: <strong style="color: var(--accent-color);">{{ group.total_requested }}</strong> 张 (最少 {{ group.total_min_requested }} 张)
+                        </span>
+                        
+                        <div style="display: flex; gap: 8px;">
+                            {% if request.user.role == 'TEAM_LEADER' or request.user.role == 'ADMIN' %}
+                                {% if group.has_team_pending %}
+                                <form method="post" action="{% url 'approve' %}" style="display: inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="batch_team_approve" />
+                                    <input type="hidden" name="batch_project" value="{{ group.project }}" />
+                                    <button type="submit" class="btn btn-primary" style="font-size: 0.8rem; padding: 4px 12px; background: var(--success-color); border: none; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);" onclick="return confirm('确认要一键同意此项目下所有待组长审批的申请吗？');">
+                                        一键组长审批同意
+                                    </button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+
+                            {% if request.user.role == 'APPROVER' or request.user.role == 'ADMIN' %}
+                                {% if group.has_pre_pending %}
+                                <form method="post" action="{% url 'approve' %}" style="display: inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="batch_pre_allocate" />
+                                    <input type="hidden" name="batch_project" value="{{ group.project }}" />
+                                    <button type="submit" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 12px; border-color: var(--success-color); color: var(--success-color);" onclick="return confirm('确认要一键预分配此项目下所有待预分配的申请吗？将以申请值作为预分配值。');">
+                                        一键预分配
+                                    </button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                            
+                            {% if request.user.role == 'DEPT_HEAD' or request.user.role == 'ADMIN' %}
+                                {% if group.has_final_pending %}
+                                <form method="post" action="{% url 'approve' %}" style="display: inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="batch_approve" />
+                                    <input type="hidden" name="batch_project" value="{{ group.project }}" />
+                                    <button type="submit" class="btn btn-primary" style="font-size: 0.8rem; padding: 4px 12px; background: var(--success-color); border: none; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);" onclick="return confirm('确认要将此项目下所有已预分配（分配数量 > 0）的申请一键实际分配并批准吗？');">
+                                        一键终审通过
+                                    </button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grouped Applications -->
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    {% for app in group.apps %}
+                    <div class="app-card-item" data-project="{{ group.project }}" data-cardtype="{{ app.cardType }}" data-cardform="{{ app.cardForm }}" style="padding: 24px; background: rgba(0,0,0,0.25); border-radius: 12px; border: 1px solid rgba(255,255,255,0.03);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1rem;">
+                            <h4 style="margin: 0; color: var(--accent-hover); display: flex; align-items: center; gap: 12px;">
+                                申请人: {{ app.applicant.username }}
+                                <span style="background: rgba(255, 255, 255, 0.05); padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: normal; color: var(--text-secondary);">
+                                    状态: {{ app.get_status_display }}
+                                </span>
+                                {% if app.allocatedCount is not None and app.allocatedCount > 0 %}
+                                    <span style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: normal;">
+                                        已预配 ({{ app.allocatedCardType }} x {{ app.allocatedCount }}张)
+                                    </span>
+                                {% endif %}
+                            </h4>
+                            <span style="color: var(--text-secondary); font-size: 0.9rem;">{{ app.created_at|date:"Y-m-d H:i" }}</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; font-size: 0.95rem;">
+                            <div><span style="color: var(--text-secondary);">团队:</span> {{ app.team }}</div>
+                            <div>
+                                <span style="color: var(--text-secondary);">优先级:</span> 
+                                <strong style="color: {% if app.priority == 'HIGH' %}var(--danger-color){% else %}inherit{% endif %};">{{ app.get_priority_display }}</strong> 
+                                ({{ app.priorityReason }})
+                            </div>
+                            <div><span style="color: var(--text-secondary);">申请形态:</span> {{ app.cardForm }}</div>
+                            <div><span style="color: var(--text-secondary);">申请型号:</span> {{ app.cardType }}</div>
+                            <div><span style="color: var(--text-secondary);">申请数量:</span> <strong>{{ app.count }}</strong> (最少: {{ app.minCount }})</div>
+                            <div><span style="color: var(--text-secondary);">使用时间:</span> 
+                                {% if app.startDate and app.endDate %}
+                                    {{ app.startDate|date:"Y-m-d" }} ~ {{ app.endDate|date:"Y-m-d" }}
+                                {% else %}
+                                    {{ app.duration }}
+                                {% endif %}
+                            </div>
+                            <div style="grid-column: span 2;"><span style="color: var(--text-secondary);">使用人:</span> {{ app.users }}</div>
+                            <div style="grid-column: span 2;"><span style="color: var(--text-secondary);">模型:</span> {{ app.model_used }}</div>
+                            <div style="grid-column: span 2;"><span style="color: var(--text-secondary);">用途:</span> {{ app.purpose }}</div>
+                            {% if app.note %}
+                            <div style="grid-column: span 2;"><span style="color: var(--text-secondary);">备注:</span> {{ app.note }}</div>
+                            {% endif %}
+                            
+                            <!-- 历史流转决策共享 -->
+                            {% if app.team_leader_note %}
+                            <div style="grid-column: span 2; padding: 8px 12px; background: rgba(99, 102, 241, 0.05); border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.15); margin-top: 4px; font-size: 0.9rem;">
+                                <span style="color: var(--accent-hover); font-weight: bold;">[组长审批意见]</span> {{ app.team_leader_note }}
+                            </div>
+                            {% endif %}
+                            {% if app.status == 'PENDING_FINAL' and app.allocatedCount is not None %}
+                            <div style="grid-column: span 2; padding: 12px; background: rgba(16, 185, 129, 0.05); border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.15); margin-top: 4px; font-size: 0.9rem; line-height: 1.5;">
+                                <h5 style="margin: 0 0 6px 0; color: var(--success-color); font-weight: bold;">[资源预分配方案]</h5>
+                                <div>预配型号/形态: <strong>{{ app.allocatedCardType }} ({{ app.allocatedCardForm }})</strong></div>
+                                <div>预配数量: <strong>{{ app.allocatedCount }} 张</strong></div>
+                                {% if app.pre_approver_note %}
+                                <div style="margin-top: 4px;"><span style="color: var(--text-secondary);">预审意见:</span> {{ app.pre_approver_note }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if app.attachment %}
+                            <div style="grid-column: span 2; display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; flex-direction: column;">
+                                <span style="color: var(--text-secondary); flex-shrink: 0;">附件图片:</span>
+                                <div style="display: flex; gap: 12px; align-items: flex-end;">
+                                    <div style="max-width: 150px; border-radius: 6px; overflow: hidden; border: 1px solid var(--panel-border);">
+                                        <img src="{{ app.attachment.url }}" alt="附件" style="width: 100%; height: auto; display: block; cursor: pointer; transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" />
+                                    </div>
+                                    <a href="{{ app.attachment.url }}" download style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--panel-border); padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                                        📥 下载图片
+                                    </a>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div style="background: var(--panel-bg); padding: 16px; border-radius: 8px;">
+                            {% if app.status == 'PENDING_TEAM' %}
+                                <h5 style="margin-top: 0; margin-bottom: 1rem; font-size: 0.95rem; font-weight: bold; color: var(--text-primary);">组长审批决策</h5>
+                                <form method="post" action="{% url 'approve' %}" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                    <div style="flex: 1 1 100%;">
+                                        <label class="form-label">组长审批意见 *</label>
+                                        <input type="text" name="team_leader_note" class="form-control" placeholder="请输入同意或驳回意见..." required />
+                                    </div>
+                                    <div style="flex: 1 1 100%; display: flex; gap: 1rem; margin-top: 1rem;">
+                                        <button type="submit" name="action" value="team_approve" class="btn btn-primary" style="background: var(--success-color);">同意申请</button>
+                                        <button type="button" class="btn btn-secondary" style="color: var(--danger-color);" onclick="openRejectModal('{{ app.id }}', 'team_reject')">驳回</button>
+                                    </div>
+                                </form>
+                            {% elif app.status == 'PENDING_PRE' %}
+                                <h5 style="margin-top: 0; margin-bottom: 1rem; font-size: 0.95rem; font-weight: bold; color: var(--text-primary);">资源配置预审</h5>
+                                <form method="post" action="{% url 'approve' %}" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                    
+                                    <div style="flex: 1 1 150px;">
+                                        <label class="form-label">预分配数量</label>
+                                        <input type="number" id="num-count-{{ app.id }}" name="allocatedCount" class="form-control" value="{% if app.allocatedCount is not None %}{{ app.allocatedCount }}{% else %}{{ app.count }}{% endif %}" min="0" required oninput="updateApproveDynamicInventory('{{ app.id }}')" />
+                                    </div>
+                                    
+                                    <div style="flex: 1 1 200px;">
+                                        <label class="form-label">预分配型号 *</label>
+                                        <select id="sel-type-{{ app.id }}" name="allocatedCardType" class="form-control" required onchange="updateApproveDynamicInventory('{{ app.id }}')">
+                                            {% for t in card_types %}
+                                            <option value="{{ t.value }}" {% if app.allocatedCardType == t.value or not app.allocatedCardType and app.cardType == t.value %}selected{% endif %}>
+                                                {{ t.value }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+
+                                    <div style="flex: 1 1 200px;">
+                                        <label class="form-label">预分配形态 *</label>
+                                        <select id="sel-form-{{ app.id }}" name="allocatedCardForm" class="form-control" required onchange="updateApproveDynamicInventory('{{ app.id }}')">
+                                            {% for f in card_forms %}
+                                            <option value="{{ f.value }}" {% if app.allocatedCardForm == f.value or not app.allocatedCardForm and app.cardForm == f.value %}selected{% endif %}>
+                                                {{ f.value }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+
+                                    <!-- Dynamic Available Inventory Display -->
+                                    <div id="badge-{{ app.id }}" style="display: none; flex: 1 1 100%; margin-top: -4px; line-height: 1.6;">
+                                        <span id="badge-text-{{ app.id }}" style="background: rgba(16, 185, 129, 0.1); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.2); padding: 4px 10px; border-radius: 6px; display: inline-block; font-size: 0.85rem; vertical-align: middle;">
+                                        </span>
+                                        <span style="font-size: 0.8rem; color: var(--text-secondary); margin-left: 8px; vertical-align: middle; display: inline-block;">
+                                            💡 提示：当前可用为实际剩余物理库存；安全余量已扣除其它待审批单锁定的预分配卡量。
+                                        </span>
+                                    </div>
+
+                                    <!-- 资源协调抽调面板 -->
+                                    <div id="preempt-panel-{{ app.id }}" style="flex: 1 1 100%; margin-top: 1rem; border: 1px dashed rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.05); padding: 16px; border-radius: 8px; display: none;">
+                                        <div style="font-weight: bold; color: var(--warning-color); margin-bottom: 8px; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                                            <span style="font-size: 1.1rem;">🔄</span> 资源协调抽调 (预审人制定)
+                                        </div>
+                                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 12px 0;">
+                                            库存不足时，可从此列表中指定拟抽调数量。放行后将附带此协调方案交由部门负责人终审，最终由执行人完成物理机器剥夺。
+                                        </p>
+                                        {% if app.preempt_candidates %}
+                                        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 0;">
+                                            <thead>
+                                                <tr>
+                                                    <th>工单ID</th>
+                                                    <th>受益项目</th>
+                                                    <th>申请人</th>
+                                                    <th>已分配</th>
+                                                    <th>当前绑定资产</th>
+                                                    <th style="width: 100px;">拟抽调数量</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for candidate in app.preempt_candidates %}
+                                                <tr>
+                                                    <td>#{{ candidate.id }}</td>
+                                                    <td><strong>{{ candidate.project }}</strong></td>
+                                                    <td>{{ candidate.applicant.username }}</td>
+                                                    <td>{{ candidate.allocatedCount }} 张</td>
+                                                    <td>
+                                                        <div style="max-height: 50px; overflow-y: auto;">
+                                                            {% for alloc in candidate.asset_allocations.all %}
+                                                                <span style="display: inline-block; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin: 2px;">
+                                                                    {{ alloc.asset.name }} ({{ alloc.asset.ip|default:"无IP" }}) - {{ alloc.allocated_cards }}张
+                                                                </span>
+                                                            {% empty %}
+                                                                <span style="color: var(--text-secondary); font-size: 0.75rem;">(未绑定物料)</span>
+                                                            {% endfor %}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" 
+                                                               name="preempt_{{ app.id }}_{{ candidate.id }}" 
+                                                               class="form-control" 
+                                                               style="padding: 4px 8px; font-size: 0.85rem; width: 80px;" 
+                                                               min="0" 
+                                                               max="{{ candidate.allocatedCount }}" 
+                                                               value="0" 
+                                                               oninput="calcTotalPreempted('{{ app.id }}')" />
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                        <div id="preempt-summary-{{ app.id }}" style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary); display: none;">
+                                            当前已拟定抽调：<strong id="preempt-total-count-{{ app.id }}" style="color: var(--warning-color);">0</strong> 张卡
+                                        </div>
+                                        {% else %}
+                                        <div style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; text-align: center; color: var(--danger-color); border: 1px solid rgba(255,50,50,0.2);">
+                                            ⚠️ 无法制定抽调方案：当前无其它符合条件的项目可供抽调。<br>
+                                            <span style="font-size: 0.75rem; color: var(--text-secondary);">（候选项目必须非本项目，且状态为已审批或已执行，并持有相关同型号卡）</span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div style="flex: 1 1 100%;">
+                                        <label class="form-label">预审配置意见</label>
+                                        <input type="text" name="pre_approver_note" class="form-control" placeholder="如：预分配资源合适，送交终审..." value="{{ app.pre_approver_note|default:'' }}" />
+                                    </div>
+
+                                    <div style="flex: 1 1 100%; display: flex; gap: 1rem; margin-top: 1rem;">
+                                        <button type="submit" id="btn-submit-{{ app.id }}" name="action" value="pre_allocate" class="btn btn-primary" style="background: var(--accent-color); transition: all 0.3s;">保存并提交终审</button>
+                                        <button type="button" class="btn btn-secondary" style="color: var(--danger-color);" onclick="openRejectModal('{{ app.id }}', 'pre_reject')">驳回</button>
+                                    </div>
+                                </form>
+                            {% elif app.status == 'PENDING_FINAL' %}
+                                <h5 style="margin-top: 0; margin-bottom: 1rem; font-size: 0.95rem; font-weight: bold; color: var(--text-primary);">部门负责人终审</h5>
+                                <form method="post" action="{% url 'approve' %}" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                    {% if app.coordination_details %}
+                                    <div style="flex: 1 1 100%; margin-bottom: 1rem; padding: 12px; border: 1px solid rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.05); border-radius: 8px;">
+                                        <div style="font-weight: bold; color: var(--warning-color); margin-bottom: 8px; font-size: 0.95rem;">
+                                            ⚠️ 包含紧急资源协调抽调方案
+                                        </div>
+                                        <div style="font-size: 0.85rem; line-height: 1.6;">
+                                            此申请因库存不足，预审人已制定以下抽调方案，终审通过后将交由执行人执行物理剥夺：
+                                            <ul style="margin: 6px 0 0 20px; padding: 0;">
+                                                {% for coord in app.coordination_details %}
+                                                <li>从工单 <strong>#{{ coord.app_id }}</strong> (项目：{{ coord.project }}) 抽调 <strong>{{ coord.count }}</strong> 张卡</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    <div style="flex: 1 1 100%;">
+                                        <label class="form-label">部门终审意见 *</label>
+                                        <input type="text" name="final_approver_note" class="form-control" placeholder="请输入终审意见..." required />
+                                    </div>
+                                    <div style="flex: 1 1 100%; display: flex; gap: 1rem; margin-top: 1rem;">
+                                        <button type="submit" name="action" value="final_approve" class="btn btn-primary" style="background: var(--success-color); box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);">批准分配</button>
+                                        <button type="button" class="btn btn-secondary" style="color: var(--danger-color);" onclick="openRejectModal('{{ app.id }}', 'final_reject')">驳回</button>
+                                    </div>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+</div>
+
+<!-- Tab 2: Approval History -->
+<div id="tab-content-history" style="{% if active_tab != 'history' %}display:none{% endif %}">
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">已审批记录</h2>
+        {% if not history_apps %}
+            <p style="color: var(--text-secondary);">暂无已审批记录。</p>
+        {% else %}
+            <!-- 历史记录列表筛选栏 -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap;">
+                <label style="font-size: 0.9rem; color: var(--text-secondary);">历史记录筛选：</label>
+                
+                <select id="filter-history-project" class="form-control" style="width: auto; min-width: 180px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterHistoryList()">
+                    <option value="">所有项目</option>
+                </select>
+                
+                <select id="filter-history-cardType" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterHistoryList()">
+                    <option value="">所有卡型号</option>
+                </select>
+            </div>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>审批时间</th>
+                        <th>项目</th>
+                        <th>申请人</th>
+                        <th>申请型号/数量</th>
+                        <th>预配规格</th>
+                        <th>状态</th>
+                        <th>组长意见</th>
+                        <th>预审意见</th>
+                        <th>终审意见</th>
+                        <th>附件</th>
+                        <th style="min-width: 70px; text-align: center;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for app in history_apps %}
+                    <tr class="history-row" data-project="{{ app.project }}" data-cardtype="{{ app.cardType }}">
+                        <td>{{ app.updated_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ app.project }}</td>
+                        <td>{{ app.applicant.username }}</td>
+                        <td>{{ app.cardType }} x {{ app.count }}</td>
+                        <td>
+                            {% if app.allocatedCount %}
+                            {{ app.allocatedCardType }} ({{ app.allocatedCardForm }}) x {{ app.allocatedCount }}张
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span style="padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; 
+                                background: {% if app.status == 'APPROVED' %}rgba(99, 102, 241, 0.15){% elif app.status == 'REJECTED' %}rgba(239, 68, 68, 0.15){% elif app.status == 'EXECUTED' %}rgba(16, 185, 129, 0.15){% else %}rgba(245, 158, 11, 0.15){% endif %};
+                                color: {% if app.status == 'APPROVED' %}var(--accent-color){% elif app.status == 'REJECTED' %}var(--danger-color){% elif app.status == 'EXECUTED' %}var(--success-color){% else %}var(--warning-color){% endif %};">
+                                {{ app.get_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ app.team_leader_note|default:"-" }}</td>
+                        <td>{{ app.pre_approver_note|default:"-" }}</td>
+                        <td>{{ app.final_approver_note|default:"-" }}</td>
+                        <td>
+                            {% if app.attachment %}
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                <img src="{{ app.attachment.url }}" alt="附件" style="width: 40px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--panel-border); transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" />
+                                <a href="{{ app.attachment.url }}" download style="font-size: 0.7rem; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 2px;">
+                                    下载
+                                </a>
+                            </div>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td style="text-align: center;">
+                            {% if app.status == 'PENDING_PRE' and current_role == 'TEAM_LEADER' or app.status == 'PENDING_PRE' and current_role == 'ADMIN' %}
+                            <button class="btn btn-secondary" style="padding: 3px 10px; font-size: 0.75rem; border-color: var(--warning-color); color: var(--warning-color);" onclick="confirmRecall('{{ app.id }}', 'team_recall', '{{ app.project|escapejs }}', '{{ app.applicant.username|escapejs }}')">撤回</button>
+                            {% elif app.status == 'PENDING_FINAL' and current_role == 'APPROVER' or app.status == 'PENDING_FINAL' and current_role == 'ADMIN' %}
+                            <button class="btn btn-secondary" style="padding: 3px 10px; font-size: 0.75rem; border-color: var(--warning-color); color: var(--warning-color);" onclick="confirmRecall('{{ app.id }}', 'pre_recall', '{{ app.project|escapejs }}', '{{ app.applicant.username|escapejs }}')">撤回</button>
+                            {% else %}
+                            <span style="color: var(--text-secondary); font-size: 0.75rem;">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 驳回模态弹窗 -->
+<div id="rejectModal" style="display: none;" class="reject-modal-overlay" onclick="if(event.target===this)closeRejectModal()">
+    <div class="reject-modal-panel">
+        <h3 style="margin: 0 0 1.5rem 0; font-size: 1.2rem; color: var(--text-primary);">驳回申请</h3>
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label class="form-label">请输入驳回理由 *</label>
+            <textarea id="reject-reason-textarea" class="form-control" rows="4" placeholder="请详细说明驳回原因..." style="resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeRejectModal()">取消</button>
+            <button type="button" class="btn btn-primary" style="background: var(--danger-color); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);" onclick="confirmReject()">确认驳回</button>
+        </div>
+    </div>
+</div>
+
+<!-- 驳回隐藏表单 -->
+<form id="rejectForm" method="post" action="{% url 'approve' %}" style="display: none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" id="reject_action_input" />
+    <input type="hidden" name="app_id" id="reject_app_id" />
+    <input type="hidden" name="rejectReason" id="reject_reason_input" />
+</form>
+
+<!-- 撤回隐藏表单 -->
+<form id="recallForm" method="post" action="{% url 'approve' %}" style="display: none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" id="recall_action_input" />
+    <input type="hidden" name="app_id" id="recall_app_id" />
+</form>
+
+<script>
+// Tab Switching
+function switchApproveTab(tabName) {
+    if (tabName === 'pending') {
+        document.getElementById('tab-btn-pending').classList.add('active-tab');
+        document.getElementById('tab-btn-history').classList.remove('active-tab');
+        document.getElementById('tab-content-pending').style.display = 'block';
+        document.getElementById('tab-content-history').style.display = 'none';
+    } else {
+        document.getElementById('tab-btn-pending').classList.remove('active-tab');
+        document.getElementById('tab-btn-history').classList.add('active-tab');
+        document.getElementById('tab-content-pending').style.display = 'none';
+        document.getElementById('tab-content-history').style.display = 'block';
+    }
+}
+
+// 撤回确认
+function confirmRecall(appId, actionType, project, applicant) {
+    const roleLabel = actionType === 'team_recall' ? '组长审批' : '预审分配';
+    const msg = `确定要撤回「${project}」(${applicant}) 的${roleLabel}结果吗？\n\n撤回后该申请将回到您的待办列表，可重新审批/分配。`;
+    if (confirm(msg)) {
+        document.getElementById('recall_action_input').value = actionType;
+        document.getElementById('recall_app_id').value = appId;
+        document.getElementById('recallForm').submit();
+    }
+}
+
+function calcTotalPreempted(appId) {
+    let total = 0;
+    const inputs = document.querySelectorAll(`input[name^="preempt_${appId}_"]`);
+    inputs.forEach(input => {
+        total += parseInt(input.value) || 0;
+    });
+    const summaryDiv = document.getElementById(`preempt-summary-${appId}`);
+    const totalSpan = document.getElementById(`preempt-total-count-${appId}`);
+    if (summaryDiv && totalSpan) {
+        if (total > 0) {
+            summaryDiv.style.display = 'block';
+            totalSpan.innerText = total;
+        } else {
+            summaryDiv.style.display = 'none';
+        }
+    }
+    updateApproveDynamicInventory(appId);
+}
+
+// Reject Modal
+function openRejectModal(appId, actionType) {
+    document.getElementById('reject_app_id').value = appId;
+    document.getElementById('reject_action_input').value = actionType;
+    document.getElementById('reject-reason-textarea').value = '';
+    
+    const modal = document.getElementById('rejectModal');
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+    
+    document.getElementById('reject-reason-textarea').focus();
+}
+
+function closeRejectModal() {
+    document.getElementById('rejectModal').style.display = 'none';
+}
+
+function confirmReject() {
+    const reason = document.getElementById('reject-reason-textarea').value.trim();
+    if (!reason) {
+        alert('请输入驳回理由！');
+        return;
+    }
+    document.getElementById('reject_reason_input').value = reason;
+    document.getElementById('rejectForm').submit();
+}
+
+// Handle ESC key to close modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeRejectModal();
+});
+
+// Project filter for demand overview
+function filterByProject(project) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', 'pending');
+    if (project) {
+        params.set('filter_project', project);
+    } else {
+        params.delete('filter_project');
+    }
+    window.location.href = '?' + params.toString();
+}
+
+// Dynamic Available Inventory for Approver allocation
+const inventoryData = {{ inventory_ref_json|safe }};
+function updateApproveDynamicInventory(appId) {
+    const typeEl = document.getElementById(`sel-type-${appId}`);
+    const formEl = document.getElementById(`sel-form-${appId}`);
+    if (!typeEl || !formEl) return;
+    const cardType = typeEl.value;
+    const cardForm = formEl.value;
+    const badge = document.getElementById(`badge-${appId}`);
+    const text = document.getElementById(`badge-text-${appId}`);
+    if (cardType && cardForm) {
+        const match = inventoryData.find(i => i.cardType === cardType && i.cardForm === cardForm);
+        const countInput = document.getElementById(`num-count-${appId}`);
+        const submitBtn = document.getElementById(`btn-submit-${appId}`);
+        const requestedCount = countInput ? (parseInt(countInput.value) || 0) : 0;
+        
+        let preemptedCount = 0;
+        const preemptInputs = document.querySelectorAll(`input[name^="preempt_${appId}_"]`);
+        preemptInputs.forEach(input => {
+            preemptedCount += parseInt(input.value) || 0;
+        });
+        
+        if (match) {
+            const physicalAvailable = match.totalCount - match.allocatedCount;
+            const safeAvailable = match.availableCount + preemptedCount;
+            
+            let color = 'var(--success-color)';
+            let isInsufficient = false;
+            
+            if (requestedCount > safeAvailable) {
+                isInsufficient = true;
+                color = 'var(--danger-color)';
+            } else if (safeAvailable <= 0) {
+                color = 'var(--danger-color)';
+            } else if (safeAvailable <= 2) {
+                color = 'var(--warning-color)';
+            }
+            
+            // 控制协调抽调面板的显示与隐藏
+            const preemptPanel = document.getElementById(`preempt-panel-${appId}`);
+            if (preemptPanel) {
+                if (requestedCount > match.availableCount) {
+                    preemptPanel.style.display = 'block';
+                } else {
+                    preemptPanel.style.display = 'none';
+                    // 如果隐藏了面板，顺便清空已经填写的抽调数
+                    let changed = false;
+                    const inputs = document.querySelectorAll(`input[name^="preempt_${appId}_"]`);
+                    inputs.forEach(input => {
+                        if (input.value !== '' && input.value !== '0') {
+                            input.value = '0';
+                            changed = true;
+                        }
+                    });
+                    if (changed) {
+                        calcTotalPreempted(appId);
+                        return; // 重新计算会再次触发此函数
+                    }
+                }
+            }
+            
+            if (submitBtn) {
+                if (isInsufficient) {
+                    // 库存及拟定抽调总数不足：禁用按钮
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.5';
+                    submitBtn.style.cursor = 'not-allowed';
+                    submitBtn.style.background = '';
+                } else if (preemptedCount > 0) {
+                    // 满足要求，且包含了抽调方案：警告色提醒
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '';
+                    submitBtn.style.cursor = '';
+                    submitBtn.style.background = 'var(--warning-color)';
+                } else {
+                    // 完全满足要求，无抽调：正常色
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '';
+                    submitBtn.style.cursor = '';
+                    submitBtn.style.background = '';
+                }
+            }
+            
+            text.style.color = color;
+            
+            if (color === 'var(--danger-color)') {
+                text.style.background = 'rgba(239, 68, 68, 0.1)';
+                text.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+            } else if (color === 'var(--warning-color)') {
+                text.style.background = 'rgba(245, 158, 11, 0.1)';
+                text.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+            } else {
+                text.style.background = 'rgba(16, 185, 129, 0.1)';
+                text.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+            }
+            
+            if (isInsufficient) {
+                if (hasPreemptPanel) {
+                    text.innerHTML = `库存不足（缺口 <strong>${requestedCount - safeAvailable}张</strong>），请在下方协调抽调面板中指定抽调数量后提交`;
+                } else {
+                    text.innerHTML = `库存不足！最多可预分配 <strong>${safeAvailable}张</strong>，当前无可抽调资源，请联系管理员补充库存`;
+                }
+            } else {
+                text.innerHTML = `当前可用: <strong>${physicalAvailable}张</strong> (安全余量: <strong>${safeAvailable}张</strong>)`;
+            }
+        } else {
+            text.style.color = 'var(--text-secondary)';
+            text.style.background = 'rgba(255, 255, 255, 0.03)';
+            text.style.borderColor = 'var(--panel-border)';
+            text.innerHTML = `该型号及形态暂无库存记录`;
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.5';
+                submitBtn.style.cursor = 'not-allowed';
+            }
+        }
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+        const submitBtn = document.getElementById(`btn-submit-${appId}`);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '';
+            submitBtn.style.cursor = '';
+        }
+    }
+}
+
+// Filter pending applications list by project, cardType, and cardForm
+function filterPendingList() {
+    const filterProj = document.getElementById('filter-pending-project').value;
+    const filterType = document.getElementById('filter-pending-cardType').value;
+    const filterForm = document.getElementById('filter-pending-cardForm').value;
+    
+    const groups = document.querySelectorAll('.project-group-container');
+    groups.forEach(group => {
+        const groupProj = group.getAttribute('data-project');
+        const cards = group.querySelectorAll('.app-card-item');
+        
+        let visibleCardsInGroup = 0;
+        cards.forEach(card => {
+            const cardProj = card.getAttribute('data-project');
+            const cardType = card.getAttribute('data-cardtype');
+            const cardForm = card.getAttribute('data-cardform');
+            
+            const projMatch = !filterProj || cardProj === filterProj;
+            const typeMatch = !filterType || cardType === filterType;
+            const formMatch = !filterForm || cardForm === filterForm;
+            
+            if (projMatch && typeMatch && formMatch) {
+                card.style.display = 'block';
+                visibleCardsInGroup++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        
+        // Hide/show the entire project container
+        const groupProjMatch = !filterProj || groupProj === filterProj;
+        if (visibleCardsInGroup > 0 && groupProjMatch) {
+            group.style.display = 'block';
+        } else {
+            group.style.display = 'none';
+        }
+    });
+}
+
+// Initialize and filter history list
+function initHistoryFilters() {
+    const projects = new Set();
+    const cardTypes = new Set();
+    
+    const rows = document.querySelectorAll('.history-row');
+    rows.forEach(row => {
+        const proj = row.getAttribute('data-project');
+        const type = row.getAttribute('data-cardtype');
+        if (proj) projects.add(proj);
+        if (type) cardTypes.add(type);
+    });
+    
+    const selectProj = document.getElementById('filter-history-project');
+    const selectType = document.getElementById('filter-history-cardType');
+    
+    if (selectProj) {
+        selectProj.innerHTML = '<option value="">所有项目</option>';
+        Array.from(projects).sort().forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            selectProj.appendChild(opt);
+        });
+    }
+    
+    if (selectType) {
+        selectType.innerHTML = '<option value="">所有卡型号</option>';
+        Array.from(cardTypes).sort().forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            selectType.appendChild(opt);
+        });
+    }
+}
+
+function filterHistoryList() {
+    const filterProj = document.getElementById('filter-history-project').value;
+    const filterType = document.getElementById('filter-history-cardType').value;
+    
+    const rows = document.querySelectorAll('.history-row');
+    rows.forEach(row => {
+        const proj = row.getAttribute('data-project');
+        const type = row.getAttribute('data-cardtype');
+        
+        const projMatch = !filterProj || proj === filterProj;
+        const typeMatch = !filterType || type === filterType;
+        
+        if (projMatch && typeMatch) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    {% for app in pending_apps %}
+    updateApproveDynamicInventory('{{ app.id }}');
+    {% endfor %}
+    initHistoryFilters();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+        <h2>批量导入下拉选项配置</h2>
+        <div class="description" style="margin-bottom: 15px; padding: 12px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; line-height: 1.8; color: #333;">
+            <p style="margin-top: 0;"><strong>💡 功能说明：</strong></p>
+            <p>此页面用于批量初始化系统下拉选项的候选值（即申请表单、审批页面中各种下拉框里可供选择的选项）。</p>
+            <p><strong>各选项类型的含义：</strong></p>
+            <ul style="margin: 8px 0; padding-left: 20px;">
+                <li><strong>所在团队</strong> — 用户归属的团队（如：语言智能、多模态研发）。用于组长审批时按团队筛选待办。</li>
+                <li><strong>卡资源形态</strong> — 卡的使用形态（如：裸机、容器、vGPU）。申请时需选择。</li>
+                <li><strong>卡资源型号</strong> — 卡的硬件型号（如：A100、H800、V100）。申请和库存管理共用。</li>
+                <li><strong>受益项目</strong> — 申请资源所服务的项目名称（如：大语言模型训练）。</li>
+                <li><strong>地域</strong> — 卡资源所在的物理机房区域（如：北京、上海）。</li>
+            </ul>
+            <p><strong>操作方式：</strong>选择选项类型后，在下方文本框中<strong>每行输入一个值</strong>，点击导入即可。重复值会自动忽略。</p>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="category" style="font-weight: bold; display: inline-block; width: 100px;">选项类型:</label>
+                <select name="category" id="category" required style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="TEAM">所在团队（团队名称）</option>
+                    <option value="CARD_FORM">卡资源形态（裸机/容器/vGPU 等）</option>
+                    <option value="CARD_TYPE">卡资源型号（A100/H800 等）</option>
+                    <option value="PROJECT">受益项目（项目名称）</option>
+                    <option value="REGION">地域（北京/上海 等）</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="bulk_data" style="font-weight: bold; display: block; margin-bottom: 8px;">选项值 (每行一个):</label>
+                <textarea name="bulk_data" id="bulk_data" rows="15" cols="60" placeholder="语言智能&#10;多模态研发&#10;CV算法部" required style="width: 95%; font-family: monospace; padding: 10px; border-radius: 4px; border: 1px solid #ccc;"></textarea>
+            </div>
+        </div>
+    </fieldset>
+    <div class="submit-row" style="background: #f8f9fa; padding: 12px; border-top: 1px solid #ddd;">
+        <input type="submit" value="执行批量导入" class="default" style="background: #6366f1; color: white; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer;">
+        <a href=".." class="button" style="display: inline-block; padding: 7px 15px; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: #333; margin-left: 10px; vertical-align: middle;">取消返回</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 卡管理系统</title>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --panel-bg: rgba(255, 255, 255, 0.03);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f0f0f5;
+            --text-secondary: #a0a5b5;
+            --accent-color: #6366f1;
+            --accent-hover: #818cf8;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-top: 0;
+            margin-bottom: 2rem;
+            text-align: center;
+            background: linear-gradient(135deg, #fff 0%, #a0a5b5 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--panel-border);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+        .btn-primary {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-color) 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
+            transition: all 0.2s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+        }
+        select.form-control {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a5b5' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            cursor: pointer;
+        }
+        select.form-control option {
+            background-color: #ffffff;
+            color: #1a1c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-panel">
+        <h1>卡管理系统</h1>
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label class="form-label">用户名</label>
+                <input type="text" name="username" class="form-control" required autofocus>
+            </div>
+            <div class="form-group">
+                <label class="form-label">密码</label>
+                <input type="password" name="password" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">登录角色 (自动加载)</label>
+                <select name="login_role" class="form-control">
+                    <option value="">-- 请先输入用户名 --</option>
+                </select>
+            </div>
+            {% if messages %}
+                {% for message in messages %}
+                <p style="color: {% if message.tags == 'error' %}#ef4444{% else %}#f59e0b{% endif %}; font-size: 0.85rem; margin-bottom: 0.5rem; padding: 10px 14px; background: {% if message.tags == 'error' %}rgba(239, 68, 68, 0.1){% else %}rgba(245, 158, 11, 0.1){% endif %}; border-radius: 8px; border: 1px solid {% if message.tags == 'error' %}rgba(239, 68, 68, 0.2){% else %}rgba(245, 158, 11, 0.2){% endif %};">
+                    {{ message }}
+                </p>
+                {% endfor %}
+            {% endif %}
+            {% if form.errors %}
+                <p style="color: #ef4444; font-size: 0.85rem; margin-bottom: 1rem; padding: 10px 14px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">用户名或密码错误，请重试。</p>
+            {% endif %}
+            <button type="submit" class="btn-primary">登 录</button>
+        </form>
+    </div>
+    
+    <script>
+        const ROLE_NAMES = {
+            'APPLICANT': '申请人',
+            'TEAM_LEADER': '组长',
+            'APPROVER': '预审人/审批人',
+            'DEPT_HEAD': '部门负责人',
+            'EXECUTOR': '执行人',
+            'ADMIN': '管理员'
+        };
+        
+        document.querySelector('input[name="username"]').addEventListener('blur', function() {
+            const username = this.value.trim();
+            const roleSelect = document.querySelector('select[name="login_role"]');
+            if (!username) {
+                roleSelect.innerHTML = '<option value="">-- 请先输入用户名 --</option>';
+                return;
+            }
+            
+            fetch(`/api/user/roles/?username=${encodeURIComponent(username)}`)
+            .then(response => response.json())
+            .then(data => {
+                roleSelect.innerHTML = '';
+                if (data.roles && data.roles.length > 0) {
+                    data.roles.forEach(role => {
+                        const option = document.createElement('option');
+                        option.value = role;
+                        option.textContent = ROLE_NAMES[role] || role;
+                        roleSelect.appendChild(option);
+                    });
+                } else {
+                    roleSelect.innerHTML = '<option value="">-- 账号不存在或未配置角色 --</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching roles:', error);
+            });
+        });
+    </script>
+</body>
+</html>

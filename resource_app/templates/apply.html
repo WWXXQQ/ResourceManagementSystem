@@ -1,0 +1,1035 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h1>资源申请</h1>
+    <!-- Tab toggles -->
+    <div style="display: flex; gap: 0.5rem; background: rgba(255,255,255,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--panel-border);">
+        <button id="tab-btn-new" class="btn btn-secondary active-tab" onclick="switchTab('new')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">新建申请</button>
+        <button id="tab-btn-history" class="btn btn-secondary" onclick="switchTab('history')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">历史申请</button>
+        <button id="tab-btn-all" class="btn btn-secondary" onclick="switchTab('all')" style="padding: 6px 16px; border: none; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; border-radius: 6px;">项目申请总览</button>
+    </div>
+</div>
+
+<style>
+.active-tab {
+    background: var(--accent-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+.history-row-hidden { display: none; }
+.project-item:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: var(--accent-hover) !important;
+}
+</style>
+
+<!-- Tab 1: New Application Form -->
+<div id="tab-content-new" class="tab-content">
+    <!-- 当前可申请卡资源参考（按型号分行） -->
+    {% if inventory_by_type %}
+    <div class="glass-panel" style="margin-bottom: 1.5rem; padding: 16px 20px;">
+        <h3 style="margin: 0 0 12px 0; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+            当前可申请卡资源参考
+            <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: normal;">（仅供参考，审批以实际库存为准）</span>
+        </h3>
+        <table class="data-table" style="font-size: 0.9rem;">
+            <thead>
+                <tr>
+                    <th>卡型号</th>
+                    <th>各形态可用数量</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for card_type, forms in inventory_by_type.items %}
+                <tr>
+                    <td><strong>{{ card_type }}</strong></td>
+                    <td>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            {% for f in forms %}
+                            <span style="padding: 3px 10px; border-radius: 6px; border: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+                                {{ f.cardForm }}
+                                <strong style="color: {% if f.availableCount > 0 %}var(--success-color){% else %}var(--danger-color){% endif %};">
+                                    {{ f.availableCount }} 张
+                                </strong>
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="glass-panel" style="margin-bottom: 2rem;">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">新建申请单</h2>
+        <form method="post" action="{% url 'apply' %}" onsubmit="return validateForm()" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="stats-grid">
+                <div class="form-group">
+                    <label class="form-label">申请人 (自动获取)</label>
+                    <input type="text" class="form-control" value="{{ request.user.username }}" disabled />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">所在团队 *</label>
+                    <select name="team" class="form-control" required>
+                        <option value="">请选择</option>
+                        {% for t in teams %}
+                        <option value="{{ t.value }}">{{ t.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">申请卡资源形态 *</label>
+                    <select name="cardForm" id="sel-cardForm" class="form-control" required onchange="updateDynamicInventory()">
+                        <option value="">请选择 (如裸机、推理池)</option>
+                        {% for f in card_forms %}
+                        <option value="{{ f.value }}">{{ f.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">卡资源型号 *</label>
+                    <select name="cardType" id="sel-cardType" class="form-control" required onchange="updateDynamicInventory()">
+                        <option value="">请选择 (如A100, V100)</option>
+                        {% for t in card_types %}
+                        <option value="{{ t.value }}">{{ t.value }}</option>
+                        {% endfor %}
+                    </select>
+                    <!-- 动态库存显示 -->
+                    <div id="dynamic-inventory-badge" style="margin-top: 6px; display: none;">
+                        <span id="dynamic-inventory-text" style="font-size: 0.85rem; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);"></span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="position: relative;">
+                    <label class="form-label">受益项目 *</label>
+                    <input type="text" id="project-search-input" class="form-control" placeholder="输入关键字搜索项目..." required onfocus="showProjectDropdown()" oninput="filterProjectDropdown()" autocomplete="off" />
+                    <input type="hidden" name="project" id="hidden-project-input" required />
+                    
+                    <div id="project-dropdown-list" style="display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; z-index: 100; background: rgba(22, 24, 30, 0.98); backdrop-filter: blur(12px); border: 1px solid var(--panel-border); border-radius: 8px; margin-top: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+                        <div style="padding: 8px 12px; color: var(--text-secondary); font-size: 0.9rem; border-bottom: 1px solid var(--panel-border);">请选择或输入搜索：</div>
+                        {% for p in projects %}
+                        <div class="project-item" data-value="{{ p.value }}" onclick="selectProject('{{ p.value|escapejs }}')" style="padding: 10px 12px; cursor: pointer; color: var(--text-primary); transition: background 0.2s; font-size: 0.95rem;">
+                            {{ p.value }}
+                        </div>
+                        {% endfor %}
+                        <div id="project-no-match" style="display: none; padding: 10px 12px; color: var(--text-secondary); font-size: 0.9rem; text-align: center;">没有找到匹配的项目</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">使用优先级 *</label>
+                    <select name="priority" class="form-control" required>
+                        <option value="HIGH">高</option>
+                        <option value="MEDIUM">中</option>
+                        <option value="LOW">低</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">申请卡数量 *</label>
+                    <input type="number" name="count" id="input-count" class="form-control" min="1" required />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">最少卡数量 *</label>
+                    <input type="number" name="minCount" id="input-minCount" class="form-control" min="1" required />
+                </div>
+
+                <!-- Searchable Tag Multi-Select for Users -->
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">使用人 *（支持添加多个使用人，用逗号或空格分隔）</label>
+                    
+                    <!-- Display selected tags -->
+                    <div id="selected-users-tags" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 42px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px dashed var(--panel-border);">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; align-self: center;">已选择：无</span>
+                    </div>
+                    
+                    <!-- Search input -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" id="user-search-input" class="form-control" placeholder="输入用户名搜索，或输入新姓名按回车/点击右侧按钮添加..." style="flex: 1;" />
+                        <button type="button" class="btn btn-secondary" onclick="handleAddCustomUserBtn()" style="flex: 0 0 auto;">手动添加</button>
+                    </div>
+                    
+                    <!-- Checkbox list -->
+                    <div id="users-checkbox-list" style="max-height: 150px; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 8px; border-radius: 8px; border: 1px solid var(--panel-border);">
+                        {% for u in all_users %}
+                        <label class="user-checkbox-item" data-username="{{ u.username }}" style="display: flex; align-items: center; gap: 8px; padding: 6px; cursor: pointer; border-radius: 4px; transition: background 0.2s;">
+                            <input type="checkbox" class="user-cb" value="{{ u.username }}" style="cursor: pointer;" onclick="syncCheckboxesToSelect()" />
+                            <span style="font-size: 0.95rem;">{{ u.username }} ({{ u.get_role_display }})</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- Hidden select element for form submission validation -->
+                    <select name="users" id="hidden-users-select" multiple required style="display: none;">
+                        {% for u in all_users %}
+                        <option value="{{ u.username }}">{{ u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">使用的模型 *</label>
+                    <input type="text" name="model_used" class="form-control" placeholder="请输入模型名称..." required />
+                </div>
+
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">申请用途 *</label>
+                    <textarea name="purpose" class="form-control" rows="3" placeholder="请详细描述用途..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">开始使用日期 *</label>
+                    <input type="date" name="startDate" id="input-startDate" class="form-control" required />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">结束使用日期 *</label>
+                    <input type="date" name="endDate" id="input-endDate" class="form-control" required />
+                    <div style="margin-top: 4px; font-size: 0.8rem; color: var(--warning-color);">建议申请时长不超过两周</div>
+                </div>
+
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">优先级理由 *</label>
+                    <textarea name="priorityReason" class="form-control" rows="2" required></textarea>
+                </div>
+
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">备注 (选填)</label>
+                    <textarea name="note" class="form-control" rows="2" placeholder="可填写特殊要求，如需要连续的GPU、特定服务器、指定地域等"></textarea>
+                </div>
+
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label" for="input-attachment">图片附件 (选填，支持上传架构图、配置截图等，限图片格式)</label>
+                    <input type="file" name="attachment" id="input-attachment" class="form-control" accept="image/*" onchange="previewImage(this)" />
+                    <p style="margin: 6px 0 0; font-size: 0.8rem; color: var(--text-secondary); opacity: 0.8;">📎 也可以在上方「申请用途」或「备注」文本框中直接 <strong style="color: var(--accent-hover);">Ctrl+V 粘贴截图</strong>，图片会自动附加到此处。</p>
+                    <div id="image-preview-container" style="display: none; margin-top: 1rem; position: relative; max-width: 200px; border-radius: 8px; overflow: hidden; border: 1px solid var(--panel-border);">
+                        <img id="image-preview" src="#" alt="预览图片" style="width: 100%; height: auto; display: block;" />
+                        <button type="button" class="btn" onclick="clearImagePreview()" style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.6); color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; padding: 0; font-size: 1rem; cursor: pointer; line-height: 1;">&times;</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 1rem; text-align: right;">
+                <button type="submit" class="btn btn-primary">提交申请</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tab 2: History Application Records -->
+<div id="tab-content-history" class="tab-content" style="display: none;">
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">我的申请记录</h2>
+        {% if not my_apps %}
+            <p style="color: var(--text-secondary);">暂无申请记录。</p>
+        {% else %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>提交时间</th>
+                        <th>项目</th>
+                        <th>型号/数量</th>
+                        <th>使用人</th>
+                        <th>状态</th>
+                        <th>审批意见</th>
+                        <th>执行结果</th>
+                        <th>附件</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for app in my_apps %}
+                    <tr class="{% if forloop.counter > 20 %}history-row-hidden{% endif %}">
+                        <td>{{ app.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ app.project }}</td>
+                        <td>{{ app.cardType }} x {{ app.count }}</td>
+                        <td style="font-size: 0.9rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ app.users }}">{{ app.users }}</td>
+                        <td>
+                            <span style="color: {% if app.status == 'REJECTED' %}var(--danger-color){% elif app.status == 'CANCELLED' %}var(--text-secondary){% elif app.status == 'APPROVED' or app.status == 'EXECUTED' %}var(--success-color){% else %}var(--warning-color){% endif %};">
+                                {{ app.get_status_display }}
+                            </span>
+                        </td>
+                        <td style="font-size: 0.85rem; line-height: 1.4;">
+                            {% if app.status == 'REJECTED' %}
+                                <span style="color: var(--danger-color);">驳回原因: {{ app.approvalNote|default:app.team_leader_note|default:app.pre_approver_note|default:app.final_approver_note|default:"-" }}</span>
+                            {% else %}
+                                {% if app.team_leader_note %}<div>组长: {{ app.team_leader_note }}</div>{% endif %}
+                                {% if app.pre_approver_note %}<div>预审: {{ app.pre_approver_note }}</div>{% endif %}
+                                {% if app.final_approver_note %}<div>终审: {{ app.final_approver_note }}</div>{% endif %}
+                                {% if not app.team_leader_note and not app.pre_approver_note and not app.final_approver_note %}-{% endif %}
+                            {% endif %}
+                        </td>
+                        <td>{{ app.executionResult|default:"-" }}</td>
+                        <td>
+                            {% if app.attachment %}
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                <img src="{{ app.attachment.url }}" alt="附件" style="width: 40px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--panel-border); transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" />
+                                <a href="{{ app.attachment.url }}" download style="font-size: 0.7rem; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 2px;">
+                                    下载
+                                </a>
+                            </div>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td style="display: flex; gap: 4px; flex-wrap: wrap;">
+                            <!-- 查看详情 -->
+                            <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--text-primary); color: var(--text-primary);" onclick="showAppDetails('{{ app.id }}')">
+                                查看详情
+                            </button>
+                            <!-- 一键导入 -->
+                            <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--accent-color); color: var(--accent-color);" 
+                                    onclick="importHistory('{{ app.team|escapejs }}', '{{ app.cardForm|escapejs }}', '{{ app.cardType|escapejs }}', '{{ app.project|escapejs }}', '{{ app.priority|escapejs }}', '{{ app.count }}', '{{ app.minCount }}', '{{ app.users|escapejs }}', '{{ app.model_used|escapejs }}', '{{ app.purpose|escapejs }}', '{{ app.priorityReason|escapejs }}', '{{ app.note|escapejs }}', '{{ app.startDate|date:"Y-m-d"|default:"" }}', '{{ app.endDate|date:"Y-m-d"|default:"" }}')">
+                                一键导入
+                            </button>
+                            <!-- 催办按钮 -->
+                            {% if app.status == 'PENDING_TEAM' or app.status == 'PENDING_PRE' or app.status == 'PENDING_FINAL' or app.status == 'APPROVED' %}
+                            <button type="button" class="btn btn-secondary btn-remind" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--warning-color); color: var(--warning-color);" onclick="sendWorkflowReminder('{{ app.id }}')">
+                                催办
+                            </button>
+                            {% endif %}
+                            <!-- 撤回按钮 -->
+                            {% if app.status == 'PENDING_TEAM' or app.status == 'PENDING_PRE' or app.status == 'PENDING_FINAL' %}
+                            <form method="post" action="{% url 'apply' %}" style="display: inline;" onsubmit="return confirm('确认要撤回此申请吗？');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="cancel" />
+                                <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                <button type="submit" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--danger-color); color: var(--danger-color);">
+                                    撤回
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if my_apps|length > 20 %}
+            <div style="text-align: center; margin-top: 1rem;">
+                <button type="button" id="load-more-btn" class="btn btn-secondary" style="border-color: var(--accent-color); color: var(--accent-color);" onclick="loadMoreHistory()">
+                    加载更多（共 {{ my_apps|length }} 条）
+                </button>
+            </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- Tab 3: Project Applications Overview -->
+<div id="tab-content-all" class="tab-content" style="display: none;">
+    <div class="glass-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">项目申请情况总览</h2>
+        
+        <!-- Filter Bar -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap;">
+            <label style="font-size: 0.9rem; color: var(--text-secondary);">筛选：</label>
+            <input type="text" id="filter-all-project" class="form-control" style="width: auto; min-width: 180px; padding: 8px 12px; font-size: 0.9rem;" placeholder="搜索项目名称..." oninput="filterAllAppsTable()" />
+            
+            <select id="filter-all-cardType" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllAppsTable()">
+                <option value="">所有卡型号</option>
+                {% for ct in card_types %}
+                <option value="{{ ct.value }}">{{ ct.value }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-all-cardForm" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllAppsTable()">
+                <option value="">所有形态</option>
+                {% for cf in card_forms %}
+                <option value="{{ cf.value }}">{{ cf.value }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-all-status" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllAppsTable()">
+                <option value="">所有状态</option>
+                <option value="PENDING">待审批</option>
+                <option value="APPROVED">已审批(待执行)</option>
+                <option value="REJECTED">已驳回</option>
+                <option value="EXECUTED">已执行</option>
+            </select>
+        </div>
+
+        {% if not all_apps %}
+            <p style="color: var(--text-secondary);">暂无项目申请记录。</p>
+        {% else %}
+            <div style="overflow-x: auto;">
+                <table class="data-table" id="all-apps-table">
+                    <thead>
+                        <tr>
+                            <th>提交时间</th>
+                            <th>申请人</th>
+                            <th>项目</th>
+                            <th>型号/形态</th>
+                            <th>申请数量</th>
+                            <th>使用时长</th>
+                            <th>状态</th>
+                            <th>审批意见</th>
+                            <th>附件</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for app in all_apps %}
+                        <tr class="all-app-row" data-project="{{ app.project }}" data-cardtype="{{ app.cardType }}" data-cardform="{{ app.cardForm }}" data-status="{{ app.status }}">
+                            <td>{{ app.created_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ app.applicant.username }}</td>
+                            <td><strong>{{ app.project }}</strong></td>
+                            <td>{{ app.cardType }} ({{ app.cardForm }})</td>
+                            <td>{{ app.count }} 张</td>
+                            <td>{{ app.duration }}</td>
+                            <td>
+                                <span style="padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; background: {% if app.status == 'REJECTED' %}rgba(239, 68, 68, 0.15){% elif app.status == 'PENDING_TEAM' or app.status == 'PENDING_PRE' or app.status == 'PENDING_FINAL' %}rgba(245, 158, 11, 0.15){% elif app.status == 'EXECUTED' %}rgba(16, 185, 129, 0.15){% else %}rgba(99, 102, 241, 0.15){% endif %}; color: {% if app.status == 'REJECTED' %}var(--danger-color){% elif app.status == 'PENDING_TEAM' or app.status == 'PENDING_PRE' or app.status == 'PENDING_FINAL' %}var(--warning-color){% elif app.status == 'EXECUTED' %}var(--success-color){% else %}var(--accent-color){% endif %};">
+                                    {{ app.get_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ app.approvalNote|default:"-" }}</td>
+                            <td>
+                                {% if app.attachment %}
+                                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                    <img src="{{ app.attachment.url }}" alt="附件" style="width: 40px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--panel-border); transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" />
+                                    <a href="{{ app.attachment.url }}" download style="font-size: 0.7rem; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 2px;">
+                                        下载
+                                    </a>
+                                </div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Form validation
+function validateForm() {
+    const count = parseInt(document.getElementById('input-count').value);
+    const minCount = parseInt(document.getElementById('input-minCount').value);
+    if (!isNaN(count) && !isNaN(minCount) && minCount > count) {
+        alert('最少卡数量不能超过申请卡数量，请修正！');
+        document.getElementById('input-minCount').focus();
+        return false;
+    }
+    const startDate = document.getElementById('input-startDate').value;
+    const endDate = document.getElementById('input-endDate').value;
+    if (startDate && endDate && endDate < startDate) {
+        alert('结束日期不能早于开始日期，请修正！');
+        document.getElementById('input-endDate').focus();
+        return false;
+    }
+    return true;
+}
+
+// 动态库存显示
+const inventoryData = {{ inventory_ref_json|safe }};
+function updateDynamicInventory() {
+    const cardType = document.getElementById('sel-cardType').value;
+    const cardForm = document.getElementById('sel-cardForm').value;
+    const badge = document.getElementById('dynamic-inventory-badge');
+    const text = document.getElementById('dynamic-inventory-text');
+    if (cardType && cardForm) {
+        const match = inventoryData.find(i => i.cardType === cardType && i.cardForm === cardForm);
+        if (match) {
+            text.innerHTML = `当前可用: <strong style="color: ${match.available > 0 ? 'var(--success-color)' : 'var(--danger-color)'}">${match.available} 张</strong>`;
+        } else {
+            text.innerHTML = `<span style="color: var(--text-secondary);">暂无该型号+形态的库存记录</span>`;
+        }
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    updateDynamicInventory();
+});
+
+// 设置默认日期（今天 ~ 今天+14天）
+(function() {
+    const today = new Date();
+    const end = new Date(today);
+    end.setDate(end.getDate() + 14);
+    const fmt = d => d.toISOString().split('T')[0];
+    document.getElementById('input-startDate').value = fmt(today);
+    document.getElementById('input-endDate').value = fmt(end);
+})();
+
+// Tab Switching logic
+function switchTab(tabName) {
+    const btnNew = document.getElementById('tab-btn-new');
+    const btnHistory = document.getElementById('tab-btn-history');
+    const btnAll = document.getElementById('tab-btn-all');
+    
+    const contentNew = document.getElementById('tab-content-new');
+    const contentHistory = document.getElementById('tab-content-history');
+    const contentAll = document.getElementById('tab-content-all');
+    
+    btnNew.classList.remove('active-tab');
+    btnHistory.classList.remove('active-tab');
+    btnAll.classList.remove('active-tab');
+    
+    contentNew.style.display = 'none';
+    contentHistory.style.display = 'none';
+    contentAll.style.display = 'none';
+    
+    if (tabName === 'new') {
+        btnNew.classList.add('active-tab');
+        contentNew.style.display = 'block';
+    } else if (tabName === 'history') {
+        btnHistory.classList.add('active-tab');
+        contentHistory.style.display = 'block';
+    } else if (tabName === 'all') {
+        btnAll.classList.add('active-tab');
+        contentAll.style.display = 'block';
+    }
+}
+
+// Client-side filtering for Tab 3 (Project applications overview)
+function filterAllAppsTable() {
+    const filterProj = document.getElementById('filter-all-project').value.trim().toLowerCase();
+    const filterType = document.getElementById('filter-all-cardType').value;
+    const filterForm = document.getElementById('filter-all-cardForm').value;
+    const filterStatus = document.getElementById('filter-all-status').value;
+    
+    const rows = document.querySelectorAll('#all-apps-table tbody tr.all-app-row');
+    rows.forEach(row => {
+        const rowProj = row.getAttribute('data-project').toLowerCase();
+        const rowType = row.getAttribute('data-cardtype');
+        const rowForm = row.getAttribute('data-cardform');
+        const rowStatus = row.getAttribute('data-status');
+        
+        const projMatch = !filterProj || rowProj.includes(filterProj);
+        const typeMatch = !filterType || rowType === filterType;
+        const formMatch = !filterForm || rowForm === filterForm;
+        const statusMatch = !filterStatus || (filterStatus === 'PENDING' ? rowStatus.startsWith('PENDING') : rowStatus === filterStatus);
+        
+        row.style.display = (projMatch && typeMatch && formMatch && statusMatch) ? '' : 'none';
+    });
+}
+
+// Load more history
+function loadMoreHistory() {
+    document.querySelectorAll('.history-row-hidden').forEach(row => {
+        row.classList.remove('history-row-hidden');
+    });
+    const btn = document.getElementById('load-more-btn');
+    if (btn) btn.style.display = 'none';
+}
+
+// User selection components
+function handleAddCustomUserBtn() {
+    const input = document.getElementById('user-search-input');
+    const val = input.value.trim();
+    if (val) {
+        const names = val.split(/[,;\s，；\n\r]+/).map(s => s.trim()).filter(Boolean);
+        names.forEach(name => {
+            addCustomUser(name);
+        });
+        input.value = '';
+    }
+}
+
+// Key events
+document.getElementById('user-search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddCustomUserBtn();
+    }
+});
+
+// Search filtering
+document.getElementById('user-search-input').addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase().trim();
+    const items = document.querySelectorAll('.user-checkbox-item');
+    items.forEach(item => {
+        const username = item.getAttribute('data-username').toLowerCase();
+        if (username.includes(query)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+});
+
+// Add custom user or check existing one
+function addCustomUser(username) {
+    if (!username) return;
+    
+    let existingCB = null;
+    document.querySelectorAll('.user-cb').forEach(cb => {
+        if (cb.value === username) {
+            existingCB = cb;
+        }
+    });
+    
+    if (existingCB) {
+        existingCB.checked = true;
+        syncCheckboxesToSelect();
+        return;
+    }
+    
+    // Add to select
+    const select = document.getElementById('hidden-users-select');
+    const opt = document.createElement('option');
+    opt.value = username;
+    opt.textContent = username;
+    opt.selected = true;
+    select.appendChild(opt);
+    
+    // Add to list UI
+    const list = document.getElementById('users-checkbox-list');
+    const label = document.createElement('label');
+    label.className = 'user-checkbox-item';
+    label.setAttribute('data-username', username);
+    label.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 6px; cursor: pointer; border-radius: 4px; transition: background 0.2s;';
+    
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'user-cb';
+    cb.value = username;
+    cb.checked = true;
+    cb.onclick = syncCheckboxesToSelect;
+    
+    const span = document.createElement('span');
+    span.style.fontSize = '0.95rem';
+    span.textContent = username + ' (自定义使用人)';
+    
+    label.appendChild(cb);
+    label.appendChild(span);
+    list.appendChild(label);
+    
+    syncCheckboxesToSelect();
+}
+
+// Sync visual checkboxes with hidden select input
+function syncCheckboxesToSelect() {
+    const select = document.getElementById('hidden-users-select');
+    const checkedUsernames = Array.from(document.querySelectorAll('.user-cb:checked')).map(cb => cb.value);
+    
+    // Update existing select options
+    Array.from(select.options).forEach(opt => {
+        opt.selected = checkedUsernames.includes(opt.value);
+    });
+    
+    // Add missing option tags for custom added names
+    checkedUsernames.forEach(username => {
+        let optExists = Array.from(select.options).some(opt => opt.value === username);
+        if (!optExists) {
+            const opt = document.createElement('option');
+            opt.value = username;
+            opt.textContent = username;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+    });
+    
+    updateUserTags();
+}
+
+// Display tag chips
+function updateUserTags() {
+    const container = document.getElementById('selected-users-tags');
+    container.innerHTML = '';
+    const checkedCBs = document.querySelectorAll('.user-cb:checked');
+    
+    if (checkedCBs.length === 0) {
+        container.innerHTML = '<span style="color: var(--text-secondary); font-size: 0.9rem; align-self: center;">已选择：无</span>';
+        return;
+    }
+    
+    checkedCBs.forEach(cb => {
+        const username = cb.value;
+        const tag = document.createElement('span');
+        tag.style.cssText = 'background: var(--accent-color); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: background 0.2s;';
+        tag.innerHTML = `${username} <span style="font-weight: bold;">&times;</span>`;
+        tag.onclick = function() {
+            cb.checked = false;
+            syncCheckboxesToSelect();
+        };
+        container.appendChild(tag);
+    });
+}
+
+// One-click clone history
+function importHistory(team, cardForm, cardType, project, priority, count, minCount, usersStr, modelUsed, purpose, priorityReason, note, startDate, endDate) {
+    document.querySelector('select[name="team"]').value = team;
+    document.querySelector('select[name="cardForm"]').value = cardForm;
+    document.querySelector('select[name="cardType"]').value = cardType;
+    if (document.getElementById('project-search-input')) {
+        document.getElementById('project-search-input').value = project;
+        document.getElementById('hidden-project-input').value = project;
+    }
+    document.querySelector('select[name="priority"]').value = priority;
+    document.querySelector('input[name="count"]').value = count;
+    document.querySelector('input[name="minCount"]').value = minCount;
+    document.querySelector('input[name="model_used"]').value = modelUsed;
+    document.querySelector('textarea[name="purpose"]').value = purpose;
+    document.querySelector('textarea[name="priorityReason"]').value = priorityReason;
+    document.querySelector('textarea[name="note"]').value = note;
+    if (startDate) document.getElementById('input-startDate').value = startDate;
+    if (endDate) document.getElementById('input-endDate').value = endDate;
+    updateDynamicInventory();
+    
+    // Clear all existing checked users
+    document.querySelectorAll('.user-cb').forEach(cb => cb.checked = false);
+    
+    // Import names
+    if (usersStr) {
+        const users = usersStr.split(',').map(s => s.trim()).filter(Boolean);
+        users.forEach(username => {
+            addCustomUser(username);
+        });
+    }
+    
+    syncCheckboxesToSelect();
+    switchTab('new');
+}
+
+// ------------------- 受益项目搜索下拉逻辑 -------------------
+function showProjectDropdown() {
+    document.getElementById('project-dropdown-list').style.display = 'block';
+    filterProjectDropdown();
+}
+
+function filterProjectDropdown() {
+    const input = document.getElementById('project-search-input');
+    const query = input.value.toLowerCase().trim();
+    const items = document.querySelectorAll('.project-item');
+    let visibleCount = 0;
+    
+    items.forEach(item => {
+        const val = item.getAttribute('data-value').toLowerCase();
+        if (!query || val.includes(query)) {
+            item.style.display = 'block';
+            visibleCount++;
+        } else {
+            item.style.display = 'none';
+        }
+    });
+    
+    document.getElementById('project-no-match').style.display = (visibleCount === 0) ? 'block' : 'none';
+}
+
+function selectProject(value) {
+    document.getElementById('project-search-input').value = value;
+    document.getElementById('hidden-project-input').value = value;
+    document.getElementById('project-dropdown-list').style.display = 'none';
+}
+
+function validateProjectInput() {
+    const input = document.getElementById('project-search-input');
+    const hidden = document.getElementById('hidden-project-input');
+    const items = document.querySelectorAll('.project-item');
+    
+    const typed = input.value.trim();
+    let matched = false;
+    
+    for (let item of items) {
+        if (item.getAttribute('data-value').toLowerCase() === typed.toLowerCase()) {
+            input.value = item.getAttribute('data-value');
+            hidden.value = item.getAttribute('data-value');
+            matched = true;
+            break;
+        }
+    }
+    
+    if (!matched) {
+        if (typed === '') {
+            hidden.value = '';
+        } else {
+            alert('请从下拉列表中选择一个有效的受益项目！');
+            input.value = '';
+            hidden.value = '';
+        }
+    }
+}
+
+// 全局点击关闭下拉框事件
+document.addEventListener('click', function(event) {
+    const input = document.getElementById('project-search-input');
+    if (!input) return;
+    
+    const container = input.parentNode;
+    const dropdown = document.getElementById('project-dropdown-list');
+    
+    if (!container.contains(event.target)) {
+        if (dropdown.style.display === 'block') {
+            dropdown.style.display = 'none';
+            validateProjectInput();
+        }
+    }
+});
+
+// 解决 Tab 键失焦或键盘移出时下拉框未关闭且未触发校验的问题
+if (document.getElementById('project-search-input')) {
+    document.getElementById('project-search-input').addEventListener('blur', function() {
+        setTimeout(function() {
+            const dropdown = document.getElementById('project-dropdown-list');
+            if (dropdown && dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+                validateProjectInput();
+            }
+        }, 150);
+    });
+}
+
+// 受益项目回车自动补全选中第一个匹配项
+document.getElementById('project-search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        const visibleItems = Array.from(document.querySelectorAll('.project-item')).filter(item => item.style.display !== 'none');
+        if (visibleItems.length > 0) {
+            e.preventDefault();
+            selectProject(visibleItems[0].getAttribute('data-value'));
+        } else {
+            e.preventDefault();
+            validateProjectInput();
+        }
+    }
+});
+
+// 本地上传图片实时预览与清除
+function previewImage(input) {
+    const container = document.getElementById('image-preview-container');
+    const preview = document.getElementById('image-preview');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            container.style.display = 'block';
+        }
+        reader.readAsDataURL(input.files[0]);
+    } else {
+        clearImagePreview();
+    }
+}
+
+function clearImagePreview() {
+    const input = document.getElementById('input-attachment');
+    const container = document.getElementById('image-preview-container');
+    const preview = document.getElementById('image-preview');
+    if (input) input.value = '';
+    if (preview) preview.src = '#';
+    if (container) container.style.display = 'none';
+}
+
+// 申请表单粘贴图片支持：在「申请用途」「备注」「优先级理由」文本框中粘贴截图，自动附加到图片附件
+function setupApplyPasteSupport(textareaSelector) {
+    const textarea = document.querySelector(textareaSelector);
+    if (!textarea) return;
+    textarea.addEventListener('paste', function(e) {
+        const clipboardData = e.clipboardData || window.clipboardData;
+        if (!clipboardData) return;
+        const items = clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    e.preventDefault();
+                    const extension = file.type.split('/')[1] || 'png';
+                    const newFile = new File([file], `pasted_image_${Date.now()}.${extension}`, { type: file.type });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(newFile);
+                    const fileInput = document.getElementById('input-attachment');
+                    fileInput.files = dataTransfer.files;
+                    previewImage(fileInput);
+                    showGlobalToast('截图已粘贴到图片附件', 'success');
+                }
+                break;
+            }
+        }
+    });
+}
+setupApplyPasteSupport('textarea[name="purpose"]');
+setupApplyPasteSupport('textarea[name="note"]');
+setupApplyPasteSupport('textarea[name="priorityReason"]');
+
+// Initial tag render
+syncCheckboxesToSelect();
+
+// Send workflow reminder via AJAX
+function sendWorkflowReminder(appId) {
+    const formData = new FormData();
+    formData.append('app_id', appId);
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    
+    // Disable all remind buttons temporarily
+    const buttons = document.querySelectorAll('.btn-remind');
+    buttons.forEach(btn => btn.disabled = true);
+    
+    fetch('{% url "remind" %}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        buttons.forEach(btn => btn.disabled = false);
+        if (data.success) {
+            showGlobalToast(data.message, 'success');
+        } else {
+            showGlobalToast(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        buttons.forEach(btn => btn.disabled = false);
+        showGlobalToast('网络错误，请稍后再试。', 'error');
+    });
+}
+
+// Show Application Details Modal
+function showAppDetails(appId) {
+    const modal = document.getElementById('app-details-modal');
+    document.body.appendChild(modal);
+    const content = document.getElementById('app-details-content');
+    content.innerHTML = '<div style="text-align:center; padding:2rem;"><span style="color:var(--text-secondary);">加载中...</span></div>';
+    modal.style.display = 'flex';
+    
+    fetch(`/api/application/details/?app_id=${appId}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            content.innerHTML = `<div style="text-align:center; color:var(--danger-color); padding:2rem;">${data.error}</div>`;
+            return;
+        }
+        
+        let assetsHtml = '';
+        if (data.assets && data.assets.length > 0) {
+            assetsHtml = `
+                <div style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">绑定物料 (Assets)</h4>
+                    <table class="data-table" style="font-size: 0.85rem; margin-top: 0.5rem;">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>IP</th>
+                                <th>规格</th>
+                                <th>状态</th>
+                                ${data.assets[0].has_password_permission ? '<th>密码</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.assets.map(a => `
+                                <tr>
+                                    <td>${a.name}</td>
+                                    <td>${a.ip || '-'}</td>
+                                    <td>${a.specifications || '-'}</td>
+                                    <td>${a.status}</td>
+                                    ${a.has_password_permission ? `
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span id="pwd-${a.id}" style="font-family: monospace; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">••••••</span>
+                                            <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.75rem;" onclick="togglePasswordVisibility(this, '${a.id}')">显示</button>
+                                        </div>
+                                    </td>
+                                    ` : ''}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        content.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.9rem; line-height: 1.6;">
+                <div><strong>申请人：</strong> ${data.applicant}</div>
+                <div><strong>团队：</strong> ${data.team}</div>
+                <div><strong>项目：</strong> ${data.project}</div>
+                <div><strong>状态：</strong> <span style="color:var(--accent-color);">${data.status_display}</span></div>
+                <div><strong>申请卡形态：</strong> ${data.cardForm}</div>
+                <div><strong>申请卡型号：</strong> ${data.cardType}</div>
+                <div><strong>申请数量：</strong> ${data.count} (最少 ${data.minCount})</div>
+                <div><strong>使用人：</strong> ${data.users}</div>
+                <div><strong>起止时间：</strong> ${data.startDate} ~ ${data.endDate}</div>
+                <div><strong>优先级：</strong> ${data.priority}</div>
+            </div>
+            
+            <div style="margin-top: 1.5rem;">
+                <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">详细说明</h4>
+                <div style="font-size: 0.9rem; line-height: 1.6;">
+                    <div><strong>用途：</strong> ${data.purpose}</div>
+                    <div><strong>优先级理由：</strong> ${data.priorityReason}</div>
+                    ${data.note ? `<div><strong>备注：</strong> ${data.note}</div>` : ''}
+                </div>
+            </div>
+            
+            <div style="margin-top: 1.5rem;">
+                <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">审批与分配</h4>
+                <div style="font-size: 0.9rem; line-height: 1.6; background: rgba(255,255,255,0.02); padding: 10px; border-radius: 6px;">
+                    <div><strong>组长意见：</strong> ${data.team_leader_note || '-'}</div>
+                    <div><strong>预审意见：</strong> ${data.pre_approver_note || '-'}</div>
+                    <div><strong>终审意见：</strong> ${data.final_approver_note || '-'}</div>
+                    ${data.allocatedCount ? `
+                    <div style="margin-top: 8px; color: var(--success-color);">
+                        <strong>已分配资源：</strong> ${data.allocatedCardType} (${data.allocatedCardForm}) x ${data.allocatedCount}
+                        <br><strong>分配区域：</strong> ${data.allocatedRegion} (${data.allocatedCardName})
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            
+            ${assetsHtml}
+        `;
+    })
+    .catch(err => {
+        content.innerHTML = `<div style="text-align:center; color:var(--danger-color); padding:2rem;">加载失败，请检查网络。</div>`;
+    });
+}
+
+function closeAppDetails() {
+    document.getElementById('app-details-modal').style.display = 'none';
+}
+
+function togglePasswordVisibility(btn, assetId) {
+    const pwdSpan = document.getElementById(`pwd-${assetId}`);
+    if (pwdSpan.textContent === '••••••') {
+        btn.disabled = true;
+        btn.textContent = '加载中...';
+        fetch(`/assets/password/?asset_id=${assetId}`)
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showGlobalToast(data.error, 'error');
+                btn.textContent = '显示';
+            } else {
+                pwdSpan.textContent = data.password || '(未设置)';
+                pwdSpan.style.color = 'var(--accent-hover)';
+                btn.textContent = '隐藏';
+            }
+        }).catch(err => {
+            btn.disabled = false;
+            btn.textContent = '显示';
+            showGlobalToast('网络错误', 'error');
+        });
+    } else {
+        pwdSpan.textContent = '••••••';
+        pwdSpan.style.color = '';
+        btn.textContent = '显示';
+    }
+}
+</script>
+
+<!-- Application Details Modal -->
+<div id="app-details-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 1500; align-items: center; justify-content: center;">
+    <div style="background: rgba(30, 32, 40, 0.95); border: 1px solid var(--panel-border); border-radius: 12px; width: 90%; max-width: 700px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 16px 40px rgba(0,0,0,0.5);">
+        <div style="padding: 16px 24px; border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">申请单详情</h3>
+            <span style="font-size: 1.5rem; cursor: pointer; color: var(--text-secondary); line-height: 1;" onclick="closeAppDetails()">&times;</span>
+        </div>
+        <div id="app-details-content" style="padding: 20px 24px; overflow-y: auto;">
+            <!-- Content dynamically populated -->
+        </div>
+        <div style="padding: 16px 24px; border-top: 1px solid var(--panel-border); text-align: right;">
+            <button type="button" class="btn btn-secondary" onclick="closeAppDetails()">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

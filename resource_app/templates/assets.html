@@ -1,0 +1,706 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h1>物料管理</h1>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button class="btn btn-secondary" onclick="exportAssetsToCSV()" style="border-color: var(--accent-color); color: var(--accent-hover);">📊 导出报表 (CSV)</button>
+        {% if is_admin_or_executor %}
+        <button class="btn btn-primary" onclick="openAddModal()">+ 新增物料</button>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-panel {
+    width: 90%;
+    max-width: 600px;
+    background: rgba(22, 24, 30, 0.98);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.status-idle {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.status-inuse {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--accent-hover);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+.status-fault {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger-color);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.filter-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+}
+.data-table th, .data-table td {
+    white-space: normal !important;
+    word-break: break-word !important;
+    vertical-align: middle;
+}
+</style>
+
+<!-- 筛选工具栏 -->
+<div class="glass-panel" style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-primary);">联合筛选物料资产</h2>
+    <div class="filter-row">
+        <div>
+            <label class="form-label" for="search-query">搜索物料</label>
+            <input type="text" id="search-query" class="form-control" placeholder="名称/IP/应用/规格..." oninput="applyFilters()">
+        </div>
+        <div>
+            <label class="form-label" for="filter-card-type">卡资源型号</label>
+            <select id="filter-card-type" class="form-control" onchange="applyFilters()">
+                <option value="">全部型号</option>
+                {% for ct in card_types %}
+                <option value="{{ ct.value }}">{{ ct.value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="filter-card-form">卡形态</label>
+            <select id="filter-card-form" class="form-control" onchange="applyFilters()">
+                <option value="">全部形态</option>
+                {% for cf in card_forms %}
+                <option value="{{ cf.value }}">{{ cf.value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="filter-region">地域</label>
+            <select id="filter-region" class="form-control" onchange="applyFilters()">
+                <option value="">全部地域</option>
+                {% for rg in regions %}
+                <option value="{{ rg.value }}">{{ rg.value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="filter-status">状态</label>
+            <select id="filter-status" class="form-control" onchange="applyFilters()">
+                <option value="">全部状态</option>
+                <option value="IDLE">闲置</option>
+                <option value="IN_USE">使用中</option>
+                <option value="FAULT">故障</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="filter-owner">责任人</label>
+            <select id="filter-owner" class="form-control" onchange="applyFilters()">
+                <option value="">全部责任人</option>
+                {% for user in all_users %}
+                <option value="{{ user.id }}">{{ user.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- 物料表格列表 -->
+<div class="glass-panel">
+    <div style="overflow-x: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="min-width: 140px;">资源名称</th>
+                    <th style="min-width: 120px;">IP地址</th>
+                    {% if is_admin_or_executor %}
+                    <th style="min-width: 100px;">密码</th>
+                    {% endif %}
+                    <th style="min-width: 160px;">规格</th>
+                    <th style="min-width: 90px;">卡型号</th>
+                    <th style="min-width: 90px;">卡形态</th>
+                    <th style="min-width: 60px;">卡数</th>
+                    <th style="min-width: 80px;">地域</th>
+                    <th style="min-width: 110px;">所在应用</th>
+                    <th style="min-width: 120px;">当前责任人</th>
+                    <th style="min-width: 120px;">当前使用人</th>
+                    <th style="min-width: 90px;">状态</th>
+                    {% if is_admin_or_executor %}
+                    <th style="min-width: 120px; text-align: center;">操作</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody id="assets-table-body">
+                {% for asset in assets %}
+                <tr data-id="{{ asset.id }}" 
+                    data-name="{{ asset.name }}" 
+                    data-ip="{{ asset.ip|default:'' }}" 
+                    data-card-type="{{ asset.card_type|default:'' }}" 
+                    data-card-form="{{ asset.card_form|default:'' }}" 
+                    data-card-count="{{ asset.card_count|default:'8' }}"
+                    data-region="{{ asset.region|default:'' }}"
+                    data-status="{{ asset.status }}" 
+                    data-owner-id="{{ asset.owner.id|default:'' }}"
+                    data-owner-name="{{ asset.owner.username|default:'' }}"
+                    data-app="{{ asset.app_name|default:'' }}"
+                    data-spec="{{ asset.specifications|default:'' }}"
+                    data-users="{{ asset.current_users|default:'' }}">
+                    <td><strong>{{ asset.name }}</strong></td>
+                    <td style="font-family: monospace;">{{ asset.ip|default:'-' }}</td>
+                    
+                    {% if is_admin_or_executor %}
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span class="password-text" id="pwd-text-{{ asset.id }}" style="font-family: monospace;">••••••</span>
+                            <button class="btn btn-secondary" onclick="togglePassword({{ asset.id }})" style="padding: 2px 6px; font-size: 0.8rem; border-color: rgba(255,255,255,0.15); display: inline-flex; align-items: center; justify-content: center; height: 22px; width: 22px;">👁</button>
+                        </div>
+                    </td>
+                    {% endif %}
+                    
+                    <td>{{ asset.specifications|default:'-' }}</td>
+                    <td>{{ asset.card_type|default:'-' }}</td>
+                    <td>{{ asset.card_form|default:'-' }}</td>
+                    <td>{{ asset.card_count }}</td>
+                    <td>{{ asset.region|default:'-' }}</td>
+                    <td>{{ asset.app_name|default:'-' }}</td>
+                    <td>
+                        {% if asset.owner %}
+                        <span style="color: var(--text-primary);">{{ asset.owner.username }}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-secondary);">({{ asset.owner.get_role_display }})</span>
+                        {% else %}
+                        <span style="color: var(--text-secondary);">-</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ asset.current_users|default:'-' }}</td>
+                    <td>
+                        {% if asset.status == 'IDLE' %}
+                        <span class="status-badge status-idle">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--success-color); display: inline-block;"></span>
+                            闲置
+                        </span>
+                        {% elif asset.status == 'IN_USE' %}
+                        <span class="status-badge status-inuse">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hover); display: inline-block;"></span>
+                            使用中
+                        </span>
+                        {% elif asset.status == 'FAULT' %}
+                        <span class="status-badge status-fault">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--danger-color); display: inline-block;"></span>
+                            故障
+                        </span>
+                        {% endif %}
+                    </td>
+                    
+                    {% if is_admin_or_executor %}
+                    <td>
+                        <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; border-color: var(--accent-color); color: var(--accent-hover);" onclick="openEditModal({{ asset.id }}, '{{ asset.name|escapejs }}', '{{ asset.ip|escapejs }}', '{{ asset.owner.id|default:'' }}', '{{ asset.current_users|escapejs }}', '{{ asset.card_type|escapejs }}', '{{ asset.card_form|escapejs }}', '{{ asset.card_count }}', '{{ asset.status|escapejs }}', '{{ asset.app_name|escapejs }}', '{{ asset.region|escapejs }}', '{{ asset.specifications|escapejs }}')">编辑</button>
+                            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; border-color: var(--danger-color); color: var(--danger-color);" onclick="openDeleteModal({{ asset.id }})">删除</button>
+                        </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="{% if is_admin_or_executor %}13{% else %}11{% endif %}" style="text-align: center; color: var(--text-secondary); padding: 2rem;">暂无物料资产记录</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if is_admin_or_executor %}
+<!-- 新增物料模态框 -->
+<div id="add-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">+ 新增物料资产</h2>
+        <form action="" method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label" for="add-name">资源名称 <span style="color: var(--danger-color);">*</span></label>
+                    <input type="text" id="add-name" name="name" class="form-control" placeholder="例如：DGX A800 节点 01" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-ip">IP地址</label>
+                    <input type="text" id="add-ip" name="ip" class="form-control" placeholder="例如：192.168.10.12">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-password">密码</label>
+                    <input type="text" id="add-password" name="password" class="form-control" placeholder="输入访问凭证">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-specifications">规格</label>
+                    <input type="text" id="add-specifications" name="specifications" class="form-control" placeholder="如: 8卡, 80G SXM">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-card-type">卡资源型号</label>
+                    <select id="add-card-type" name="card_type" class="form-control">
+                        <option value="">选择型号...</option>
+                        {% for ct in card_types %}
+                        <option value="{{ ct.value }}">{{ ct.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-card-form">卡形态</label>
+                    <select id="add-card-form" name="card_form" class="form-control">
+                        <option value="">选择形态...</option>
+                        {% for cf in card_forms %}
+                        <option value="{{ cf.value }}">{{ cf.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-card-count">卡数量</label>
+                    <input type="number" id="add-card-count" name="card_count" class="form-control" value="8" min="1" placeholder="默认 8 卡">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-region">地域</label>
+                    <select id="add-region" name="region" class="form-control">
+                        <option value="">选择地域...</option>
+                        {% for rg in regions %}
+                        <option value="{{ rg.value }}">{{ rg.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-status">状态</label>
+                    <select id="add-status" name="status" class="form-control">
+                        <option value="IDLE">闲置</option>
+                        <option value="IN_USE">使用中</option>
+                        <option value="FAULT">故障</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-owner">当前责任人(申请人)</label>
+                    <select id="add-owner" name="owner" class="form-control">
+                        <option value="">无责任人...</option>
+                        {% for user in all_users %}
+                        <option value="{{ user.id }}">{{ user.username }} ({{ user.get_role_display }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="add-app-name">所在应用</label>
+                    <input type="text" id="add-app-name" name="app_name" class="form-control" placeholder="如: 搜搜主模型训练">
+                </div>
+            </div>
+            
+            <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label" for="add-current-users">当前使用人</label>
+                <input type="text" id="add-current-users" name="current_users" class="form-control" placeholder="如: 张三, 李四 (多个用户用逗号分隔)">
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
+                <button type="submit" class="btn btn-primary">提交保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑物料模态框 -->
+<div id="edit-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-panel">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">编辑物料资产</h2>
+        <form action="" method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="asset_id" id="edit-id">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label" for="edit-name">资源名称 <span style="color: var(--danger-color);">*</span></label>
+                    <input type="text" id="edit-name" name="name" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-ip">IP地址</label>
+                    <input type="text" id="edit-ip" name="ip" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-password">密码</label>
+                    <input type="text" id="edit-password" name="password" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-specifications">规格</label>
+                    <input type="text" id="edit-specifications" name="specifications" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-card-type">卡资源型号</label>
+                    <select id="edit-card-type" name="card_type" class="form-control">
+                        <option value="">选择型号...</option>
+                        {% for ct in card_types %}
+                        <option value="{{ ct.value }}">{{ ct.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-card-form">卡形态</label>
+                    <select id="edit-card-form" name="card_form" class="form-control">
+                        <option value="">选择形态...</option>
+                        {% for cf in card_forms %}
+                        <option value="{{ cf.value }}">{{ cf.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-card-count">卡数量</label>
+                    <input type="number" id="edit-card-count" name="card_count" class="form-control" min="1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-region">地域</label>
+                    <select id="edit-region" name="region" class="form-control">
+                        <option value="">选择地域...</option>
+                        {% for rg in regions %}
+                        <option value="{{ rg.value }}">{{ rg.value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-status">状态</label>
+                    <select id="edit-status" name="status" class="form-control">
+                        <option value="IDLE">闲置</option>
+                        <option value="IN_USE">使用中</option>
+                        <option value="FAULT">故障</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-owner">当前责任人(申请人)</label>
+                    <select id="edit-owner" name="owner" class="form-control">
+                        <option value="">无责任人...</option>
+                        {% for user in all_users %}
+                        <option value="{{ user.id }}">{{ user.username }} ({{ user.get_role_display }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-app-name">所在应用</label>
+                    <input type="text" id="edit-app-name" name="app_name" class="form-control">
+                </div>
+            </div>
+            
+            <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label" for="edit-current-users">当前使用人</label>
+                <input type="text" id="edit-current-users" name="current_users" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button type="submit" class="btn btn-primary">提交保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div id="delete-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-panel" style="max-width: 400px; text-align: center;">
+        <h3 style="color: var(--danger-color); margin-bottom: 1.5rem; font-size: 1.25rem;">确认删除</h3>
+        <p style="color: var(--text-primary); margin-bottom: 2rem; font-size: 0.95rem;">您确定要删除该物料资产吗？此操作将永久移除该数据且不可撤销。</p>
+        <form action="" method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="asset_id" id="delete-id">
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+                <button type="submit" class="btn btn-primary" style="background: var(--danger-color); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);">确认删除</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+// 密码显隐切换
+const passwordCache = {};
+
+function togglePassword(id) {
+    const textSpan = document.getElementById('pwd-text-' + id);
+    if (!textSpan) return;
+    
+    if (textSpan.innerText === '••••••') {
+        if (passwordCache[id] !== undefined) {
+            textSpan.innerText = passwordCache[id] || '(无密码)';
+        } else {
+            textSpan.innerText = '加载中...';
+            fetch('/assets/password/?asset_id=' + id)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.password !== undefined) {
+                        passwordCache[id] = data.password;
+                        textSpan.innerText = data.password || '(无密码)';
+                    } else {
+                        textSpan.innerText = '加载失败';
+                    }
+                })
+                .catch(() => {
+                    textSpan.innerText = '加载失败';
+                });
+        }
+    } else {
+        textSpan.innerText = '••••••';
+    }
+}
+
+{% if is_admin_or_executor %}
+// 新增模态框控制
+function openAddModal() {
+    const modal = document.getElementById('add-modal');
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+function closeAddModal() {
+    document.getElementById('add-modal').style.display = 'none';
+}
+
+// 编辑模态框控制
+function openEditModal(id, name, ip, ownerId, currentUsers, cardType, cardForm, cardCount, status, appName, region, specifications) {
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-name').value = name;
+    document.getElementById('edit-ip').value = ip;
+    document.getElementById('edit-password').value = '••••••'; // 占位显示
+    
+    // 异步拉取真实密码填充
+    fetch('/assets/password/?asset_id=' + id)
+        .then(response => response.json())
+        .then(data => {
+            if (data.password !== undefined) {
+                document.getElementById('edit-password').value = data.password;
+            }
+        });
+        
+    document.getElementById('edit-owner').value = ownerId;
+    document.getElementById('edit-current-users').value = currentUsers;
+    document.getElementById('edit-card-type').value = cardType;
+    document.getElementById('edit-card-form').value = cardForm;
+    document.getElementById('edit-card-count').value = cardCount;
+    document.getElementById('edit-status').value = status;
+    document.getElementById('edit-app-name').value = appName;
+    document.getElementById('edit-region').value = region;
+    document.getElementById('edit-specifications').value = specifications;
+    
+    const modal = document.getElementById('edit-modal');
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+}
+
+// 删除确认控制
+function openDeleteModal(id) {
+    document.getElementById('delete-id').value = id;
+    const modal = document.getElementById('delete-modal');
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+function closeDeleteModal() {
+    document.getElementById('delete-modal').style.display = 'none';
+}
+{% endif %}
+
+// 前端联合多维筛选
+function applyFilters() {
+    const query = document.getElementById('search-query').value.toLowerCase().trim();
+    const cardType = document.getElementById('filter-card-type').value;
+    const cardForm = document.getElementById('filter-card-form').value;
+    const region = document.getElementById('filter-region').value;
+    const status = document.getElementById('filter-status').value;
+    const owner = document.getElementById('filter-owner').value;
+
+    const rows = document.querySelectorAll('#assets-table-body tr');
+    let visibleCount = 0;
+    
+    rows.forEach(row => {
+        // 如果是“暂无记录”行则跳过
+        if (row.cells.length === 1 && row.cells[0].getAttribute('colspan')) {
+            return;
+        }
+
+        const name = row.getAttribute('data-name').toLowerCase();
+        const ip = row.getAttribute('data-ip').toLowerCase();
+        const appName = row.getAttribute('data-app').toLowerCase();
+        const spec = row.getAttribute('data-spec').toLowerCase();
+        const currentUsers = row.getAttribute('data-users').toLowerCase();
+        
+        const rCardType = row.getAttribute('data-card-type');
+        const rCardForm = row.getAttribute('data-card-form');
+        const rRegion = row.getAttribute('data-region');
+        const rStatus = row.getAttribute('data-status');
+        const rOwnerId = row.getAttribute('data-owner-id');
+
+        // 文本联合匹配：资源名称、IP地址、所在应用、规格、当前使用人
+        const textMatches = !query || 
+                            name.includes(query) || 
+                            ip.includes(query) || 
+                            appName.includes(query) || 
+                            spec.includes(query) || 
+                            currentUsers.includes(query);
+
+        const cardTypeMatches = !cardType || rCardType === cardType;
+        const cardFormMatches = !cardForm || rCardForm === cardForm;
+        const regionMatches = !region || rRegion === region;
+        const statusMatches = !status || rStatus === status;
+        const ownerMatches = !owner || rOwnerId === owner;
+
+        if (textMatches && cardTypeMatches && cardFormMatches && regionMatches && statusMatches && ownerMatches) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    // 检查是否所有行都隐藏，如果是，展示临时“暂无记录”行
+    const tbody = document.getElementById('assets-table-body');
+    const existingEmptyRow = document.getElementById('js-empty-row');
+    if (existingEmptyRow) {
+        existingEmptyRow.remove();
+    }
+    
+    if (visibleCount === 0 && rows.length > 0 && !(rows.length === 1 && rows[0].cells.length === 1 && rows[0].cells[0].getAttribute('colspan'))) {
+        const tr = document.createElement('tr');
+        tr.id = 'js-empty-row';
+        const td = document.createElement('td');
+        td.colSpan = {% if is_admin_or_executor %}13{% else %}11{% endif %};
+        td.style.textAlign = 'center';
+        td.style.color = 'var(--text-secondary)';
+        td.style.padding = '2rem';
+        td.innerText = '没有匹配到任何符合筛选条件的物料';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+}
+
+// 绑定 ESC 键关闭模态框
+window.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        {% if is_admin_or_executor %}
+        closeAddModal();
+        closeEditModal();
+        closeDeleteModal();
+        {% endif %}
+    }
+});
+
+// 客户端物料资产报表导出 (基于当前过滤结果导出)
+function exportAssetsToCSV() {
+    const headers = [
+        "资源名称",
+        "IP地址",
+        "规格",
+        "卡型号",
+        "卡形态",
+        "卡数",
+        "地域",
+        "所在应用",
+        "当前责任人(申请人)",
+        "当前使用人",
+        "状态"
+    ];
+
+    const rows = document.querySelectorAll('#assets-table-body tr');
+    const csvContent = [];
+    
+    // 添加表头
+    csvContent.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','));
+    
+    let exportCount = 0;
+    
+    rows.forEach(row => {
+        // 跳过空行及 JS 临时空行
+        if (row.id === 'js-empty-row' || (row.cells.length === 1 && row.cells[0].getAttribute('colspan'))) {
+            return;
+        }
+        
+        // 仅导出符合当前筛选条件的可见数据
+        if (row.style.display === 'none') {
+            return;
+        }
+        
+        const name = row.getAttribute('data-name') || '';
+        const ip = row.getAttribute('data-ip') || '';
+        const spec = row.getAttribute('data-spec') || '';
+        const cardType = row.getAttribute('data-card-type') || '';
+        const cardForm = row.getAttribute('data-card-form') || '';
+        const cardCount = row.getAttribute('data-card-count') || '8';
+        const region = row.getAttribute('data-region') || '';
+        const appName = row.getAttribute('data-app') || '';
+        const ownerName = row.getAttribute('data-owner-name') || '';
+        const currentUsers = row.getAttribute('data-users') || '';
+        
+        const statusVal = row.getAttribute('data-status');
+        let statusText = '未知';
+        if (statusVal === 'IDLE') statusText = '闲置';
+        else if (statusVal === 'IN_USE') statusText = '使用中';
+        else if (statusVal === 'FAULT') statusText = '故障';
+        
+        const values = [
+            name,
+            ip,
+            spec,
+            cardType,
+            cardForm,
+            cardCount,
+            region,
+            appName,
+            ownerName,
+            currentUsers,
+            statusText
+        ];
+        
+        csvContent.push(values.map(v => `"${v.replace(/"/g, '""')}"`).join(','));
+        exportCount++;
+    });
+    
+    if (exportCount === 0) {
+        alert('当前列表中没有可导出的物料数据！');
+        return;
+    }
+    
+    // 添加 \uFEFF BOM 字节序标记，确保 Excel 打开 UTF-8 编码的中文时不乱码
+    const csvString = '\uFEFF' + csvContent.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    link.setAttribute("download", `物料资产报表_${dateStr}.csv`);
+    
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+        <h2>批量导入物料资产</h2>
+        <div class="description" style="margin-bottom: 15px; padding: 12px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; line-height: 1.5; color: #333;">
+            <p style="margin-top: 0;"><strong>💡 格式说明：</strong></p>
+            <p>1. 请从 Excel 表格中复制包含数据的多行，直接粘贴到下方的文本框中。列与列之间使用 <strong>Tab 制表符</strong> 分隔（Excel 复制出来的默认格式）。</p>
+            <p>2. 首行如果是表头，系统会自动检测并忽略（如包含「资源名称」或「IP地址」）。</p>
+            <p>3. 每行最多包含 12 列，格式顺序为（前 1 列为必填，其它为选填）：</p>
+            <code style="display: block; padding: 8px; background: #f1f3f5; border-radius: 4px; margin: 8px 0; font-family: monospace; font-size: 0.9em; border-left: 4px solid #6366f1; color: #000; overflow-x: auto; white-space: nowrap;">
+                资源名称 [Tab] IP地址 [Tab] 密码 [Tab] 规格 [Tab] 卡型号 [Tab] 卡形态 [Tab] 卡数量 [Tab] 地域 [Tab] 状态(闲置/使用中/故障) [Tab] 责任人(用户名) [Tab] 使用人 [Tab] 所在应用
+            </code>
+            <p>4. <strong>数据校验规则说明：</strong></p>
+            <ul>
+                <li>状态如果不填，默认导入为 <strong>闲置</strong>。有效值包括：<code>闲置</code>、<code>使用中</code>、<code>故障</code>。</li>
+                <li><strong>卡数量</strong>：不填默认为 <code>8</code>（裸机一般为8卡）。</li>
+                <li><strong>系统配置校验</strong>：填写的卡型号、卡形态、地域必须存在于“系统选项配置”中，否则该行将导入失败。</li>
+                <li><strong>责任人校验</strong>：若填写了责任人用户名，必须是系统中已经注册的有效用户，若不存在该行将导入失败并拦截。</li>
+            </ul>
+        </div>
+        <div class="form-row">
+            <div>
+                <label class="required" for="bulk_data" style="font-weight: bold; display: block; margin-bottom: 8px;">粘贴 Excel/CSV 数据:</label>
+                <textarea name="bulk_data" id="bulk_data" rows="20" cols="100" placeholder="DGX A800 Node-C	192.168.10.12	AdminPass	8卡 80G	A800	裸机	8	北京	闲置	zhangsan	lisi,wangwu	搜索大模型" required style="width: 95%; font-family: monospace; font-size: 0.9em; padding: 10px; border-radius: 4px; border: 1px solid #ccc;"></textarea>
+            </div>
+        </div>
+    </fieldset>
+    <div class="submit-row" style="background: #f8f9fa; padding: 12px; border-top: 1px solid #ddd;">
+        <input type="submit" value="执行批量导入" class="default" style="background: #6366f1; color: white; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer;">
+        <a href=".." class="button" style="display: inline-block; padding: 7px 15px; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: #333; margin-left: 10px; vertical-align: middle;">取消返回</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,481 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="feedback-page">
+    <h1>问题反馈中心</h1>
+    <p style="color: var(--text-secondary); margin-bottom: 2rem; font-size: 0.95rem; line-height: 1.5;">
+        为了持续提升系统体验，欢迎反馈您在资源管理系统使用中遇到的问题、Bug 或功能改进建议。
+        <br>
+        <span style="color: var(--accent-color); font-weight: 500;">💡 全员公开：</span> 所有人都可以公开查看已提交的所有反馈单，以便了解类似问题的进展，避免重复提交。
+    </p>
+
+    <div style="display: flex; gap: 2rem; align-items: start; flex-wrap: wrap;">
+        
+        <!-- Left: Submit Feedback Form -->
+        <div class="glass-panel" style="flex: 1; min-width: 320px; max-width: 400px; position: sticky; top: 20px;">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                ✍️ 提交新反馈
+            </h2>
+            <form method="post" action="{% url 'feedback' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="submit">
+                
+                <div class="form-group">
+                    <label class="form-label" for="feedback-title">反馈标题</label>
+                    <input type="text" id="feedback-title" name="title" class="form-control" placeholder="如：申请表单项目搜索有延迟..." required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="feedback-content">详细内容描述</label>
+                    <textarea id="feedback-content" name="content" class="form-control" rows="8" placeholder="请详细描述您遇到的问题、操作步骤或期望的优化方案，以便我们排查。" style="resize: vertical;" required></textarea>
+                    <p style="margin: 6px 0 0; font-size: 0.8rem; color: var(--text-secondary); opacity: 0.8;">📎 支持直接在此文本框中 <strong style="color: var(--accent-hover);">Ctrl+V 粘贴截图</strong>，图片会自动添加到附件中。</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="feedback-images">上传图片附件 (可选，支持多选，限 png, jpg, jpeg, gif, webp，单张限5MB)</label>
+                    <input type="file" id="feedback-images" name="images" class="form-control" accept="image/*" multiple>
+                    <div id="new-images-preview" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+                    提交反馈问题
+                </button>
+            </form>
+        </div>
+
+        <!-- Right: Feedbacks list -->
+        <div class="glass-panel" style="flex: 2; min-width: 450px; display: flex; flex-direction: column; gap: 1.5rem;">
+            <h2 style="margin-bottom: 0.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                📋 全部反馈记录 ({{ feedbacks|length }})
+            </h2>
+            
+            {% if feedbacks %}
+                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                    {% for fb in feedbacks %}
+                        <div style="
+                            padding: 1.5rem; 
+                            border-radius: 12px; 
+                            background: rgba(255, 255, 255, 0.02); 
+                            border: 1px solid rgba(255, 255, 255, 0.05);
+                            transition: all 0.2s ease;
+                            {% if fb.status == 'RESOLVED' %}border-left: 4px solid var(--success-color);{% else %}border-left: 4px solid var(--warning-color);{% endif %}
+                        " class="feedback-card">
+                            
+                            <!-- Header -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+                                <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">
+                                    {{ fb.title }}
+                                </h3>
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    {% if fb.status == 'RESOLVED' %}
+                                        <span style="background: rgba(16, 185, 129, 0.15); color: var(--success-color); font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.25);">
+                                            已解决
+                                        </span>
+                                    {% else %}
+                                        <span style="background: rgba(245, 158, 11, 0.15); color: var(--warning-color); font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; font-weight: bold; border: 1px solid rgba(245, 158, 11, 0.25);">
+                                            待处理
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <!-- Metadata -->
+                            <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem; flex-wrap: wrap; border-bottom: 1px solid rgba(255, 255, 255, 0.04); padding-bottom: 0.75rem;">
+                                <span>👤 反馈人：<strong>{{ fb.user.username }}</strong> ({{ fb.user.get_role_display }})</span>
+                                <span>📅 反馈时间：{{ fb.created_at|date:"Y-m-d H:i" }}</span>
+                                {% if fb.status == 'RESOLVED' %}
+                                    <span>✅ 解决时间：{{ fb.updated_at|date:"Y-m-d H:i" }}</span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Description Content -->
+                            <div style="font-size: 0.9rem; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; word-break: break-all; margin-bottom: 1rem;">{{ fb.content }}</div>
+                            
+                            {% if fb.images.all %}
+                            <div style="display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; margin-bottom: 1rem; flex-direction: column;">
+                                <span style="color: var(--text-secondary); font-size: 0.8rem; flex-shrink: 0;">图片附件 ({{ fb.images.all|length }}):</span>
+                                <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                                    {% for img in fb.images.all %}
+                                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                        <div style="width: 100px; height: 75px; border-radius: 6px; overflow: hidden; border: 1px solid var(--panel-border);">
+                                            <img src="{{ img.image.url }}" alt="反馈图片" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer; transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" />
+                                        </div>
+                                        <a href="{{ img.image.url }}" download style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--panel-border); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; text-decoration: none; display: inline-flex; align-items: center; gap: 2px; font-weight: bold;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                                            下载
+                                        </a>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            <!-- Actions -->
+                            {% if fb.status == 'PENDING' %}
+                                {% if fb.user == request.user or request.user.role == 'ADMIN' or current_role == 'EXECUTOR' or current_role == 'ADMIN' %}
+                                    <div style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.05); padding-top: 0.75rem; align-items: center;">
+                                        {% if fb.user == request.user or request.user.role == 'ADMIN' %}
+                                            <button type="button" class="btn btn-secondary" onclick="openEditFeedbackModal({{ fb.id }}, '{{ fb.title|escapejs }}', '{{ fb.content|escapejs }}', [ {% for img in fb.images.all %}{id: {{ img.id }}, url: '{{ img.image.url|escapejs }}'}{% if not forloop.last %},{% endif %}{% endfor %} ])" style="
+                                                font-size: 0.8rem; 
+                                                padding: 6px 12px; 
+                                                border-color: var(--accent-color); 
+                                                color: var(--accent-hover);
+                                            }">
+                                                ✏️ 编辑反馈
+                                            </button>
+                                        {% endif %}
+                                        
+                                        {% if fb.user == request.user or request.user.role == 'ADMIN' %}
+                                            <form method="post" action="{% url 'feedback' %}" style="margin: 0; display: inline-block;" onsubmit="return confirm('确定要删除此反馈记录吗？操作不可恢复。');">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="feedback_id" value="{{ fb.id }}">
+                                                <button type="submit" class="btn btn-secondary" style="
+                                                    font-size: 0.8rem; 
+                                                    padding: 6px 12px; 
+                                                    border-color: var(--danger-color); 
+                                                    color: var(--danger-color);
+                                                ">
+                                                    🗑️ 删除
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        {% if current_role == 'EXECUTOR' or current_role == 'ADMIN' %}
+                                            <form method="post" action="{% url 'feedback' %}" style="margin: 0; display: inline-block;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="resolve">
+                                                <input type="hidden" name="feedback_id" value="{{ fb.id }}">
+                                                <button type="submit" class="btn btn-secondary" style="
+                                                    font-size: 0.8rem; 
+                                                    padding: 6px 12px; 
+                                                    border-color: var(--success-color); 
+                                                    color: var(--success-color);
+                                                    background: rgba(16, 185, 129, 0.05);
+                                                " onmouseover="this.style.background='rgba(16, 185, 129, 0.15)'" onmouseout="this.style.background='rgba(16, 185, 129, 0.05)'">
+                                                    ✓ 标记为已解决
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p style="color: var(--text-secondary); text-align: center; margin: 4rem 0;">目前没有任何反馈记录。如果您在使用过程中遇到问题，欢迎在左侧提交！</p>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+
+<style>
+.feedback-card {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.feedback-card:hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.08) !important;
+}
+</style>
+
+<!-- 编辑反馈模态框 -->
+<div id="edit-feedback-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-panel" style="max-width: 600px;">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+            ✏️ 编辑反馈问题
+        </h2>
+        <form method="post" action="{% url 'feedback' %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="feedback_id" id="edit-feedback-id">
+            
+            <div class="form-group">
+                <label class="form-label" for="edit-feedback-title-input">反馈标题</label>
+                <input type="text" id="edit-feedback-title-input" name="title" class="form-control" placeholder="如：申请表单项目搜索有延迟..." required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="edit-feedback-content-input">详细内容描述</label>
+                <textarea id="edit-feedback-content-input" name="content" class="form-control" rows="8" placeholder="请详细描述您遇到的问题、操作步骤或期望的优化方案，以便我们排查。" style="resize: vertical;" required></textarea>
+            </div>
+
+            <!-- Existing Images List -->
+            <div class="form-group" id="existing-images-container" style="display: none;">
+                <label class="form-label">已有图片附件 (勾选表示删除该图片)</label>
+                <div id="existing-images-list" style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px;">
+                    <!-- Dynamically populated by JS -->
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="edit-feedback-images-input">追加上传新图片 (支持多选，限 png, jpg, jpeg, gif, webp，单张限5MB)</label>
+                <input type="file" id="edit-feedback-images-input" name="images" class="form-control" accept="image/*" multiple>
+                <div id="edit-images-preview" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeEditFeedbackModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存修改</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-panel {
+    width: 90%;
+    max-width: 600px;
+    background: rgba(22, 24, 30, 0.98);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+</style>
+
+<script>
+// Global arrays to store selected/pasted File objects
+let newFeedbackFiles = [];
+let editFeedbackFiles = [];
+
+// Helper to update the file input and render previews
+function handleAttachedFiles(fileInput, filesArray, previewContainerId) {
+    const dataTransfer = new DataTransfer();
+    filesArray.forEach(file => {
+        dataTransfer.items.add(file);
+    });
+    fileInput.files = dataTransfer.files;
+    
+    // Render previews
+    const previewContainer = document.getElementById(previewContainerId);
+    previewContainer.innerHTML = '';
+    
+    filesArray.forEach((file, index) => {
+        const div = document.createElement('div');
+        div.style.position = 'relative';
+        div.style.width = '80px';
+        div.style.height = '60px';
+        div.style.borderRadius = '6px';
+        div.style.overflow = 'hidden';
+        div.style.border = '1px solid var(--panel-border)';
+        
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        div.appendChild(img);
+        
+        // Remove button
+        const removeBtn = document.createElement('div');
+        removeBtn.innerHTML = '×';
+        removeBtn.style.position = 'absolute';
+        removeBtn.style.top = '2px';
+        removeBtn.style.right = '2px';
+        removeBtn.style.background = 'rgba(239, 68, 68, 0.8)';
+        removeBtn.style.color = 'white';
+        removeBtn.style.width = '16px';
+        removeBtn.style.height = '16px';
+        removeBtn.style.borderRadius = '50%';
+        removeBtn.style.display = 'flex';
+        removeBtn.style.alignItems = 'center';
+        removeBtn.style.justifyContent = 'center';
+        removeBtn.style.fontSize = '12px';
+        removeBtn.style.cursor = 'pointer';
+        removeBtn.style.zIndex = '10';
+        removeBtn.onclick = function() {
+            filesArray.splice(index, 1);
+            handleAttachedFiles(fileInput, filesArray, previewContainerId);
+        };
+        div.appendChild(removeBtn);
+        
+        previewContainer.appendChild(div);
+    });
+}
+
+function setupPasteSupport(textareaId, fileInputId, filesArray, previewContainerId) {
+    const textarea = document.getElementById(textareaId);
+    const fileInput = document.getElementById(fileInputId);
+    
+    if (!textarea || !fileInput) return;
+    
+    textarea.addEventListener('paste', function(e) {
+        const clipboardData = e.clipboardData || window.clipboardData;
+        if (!clipboardData) return;
+        
+        const items = clipboardData.items;
+        let hasImage = false;
+        
+        // 1. 尝试直接处理剪贴板中的图片文件（例如直接截图的粘贴）
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    hasImage = true;
+                    const extension = file.type.split('/')[1] || 'png';
+                    const newFile = new File([file], `pasted_image_${Date.now()}.${extension}`, { type: file.type });
+                    filesArray.push(newFile);
+                }
+            }
+        }
+        
+        // 2. 如果直接粘贴没匹配到图片，尝试读取 HTML 富文本内容解析 Base64 格式嵌入的图片（例如 Word 复制粘贴）
+        if (!hasImage) {
+            const html = clipboardData.getData('text/html');
+            if (html) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const imgs = doc.querySelectorAll('img');
+                imgs.forEach(img => {
+                    const src = img.src;
+                    if (src && src.startsWith('data:image/')) {
+                        try {
+                            const parts = src.split(',');
+                            const mime = parts[0].match(/:(.*?);/)[1];
+                            const bstr = atob(parts[1]);
+                            let n = bstr.length;
+                            const u8arr = new Uint8Array(n);
+                            while (n--) {
+                                u8arr[n] = bstr.charCodeAt(n);
+                            }
+                            const extension = mime.split('/')[1] || 'png';
+                            const blob = new Blob([u8arr], { type: mime });
+                            const newFile = new File([blob], `pasted_rich_${Date.now()}.${extension}`, { type: mime });
+                            filesArray.push(newFile);
+                            hasImage = true;
+                        } catch (err) {
+                            console.error('解析粘贴的 Base64 图片失败:', err);
+                        }
+                    }
+                });
+            }
+        }
+        
+        if (hasImage) {
+            e.preventDefault(); // 阻止将文件内容作为字符串粘贴到文本域中
+            handleAttachedFiles(fileInput, filesArray, previewContainerId);
+        }
+    });
+}
+
+function openEditFeedbackModal(id, title, content, images) {
+    document.getElementById('edit-feedback-id').value = id;
+    document.getElementById('edit-feedback-title-input').value = title;
+    document.getElementById('edit-feedback-content-input').value = content;
+    
+    // Clear dynamic file input and arrays
+    document.getElementById('edit-feedback-images-input').value = '';
+    editFeedbackFiles.splice(0, editFeedbackFiles.length); // Clear list
+    document.getElementById('edit-images-preview').innerHTML = '';
+    
+    const container = document.getElementById('existing-images-container');
+    const list = document.getElementById('existing-images-list');
+    list.innerHTML = '';
+    
+    if (images && images.length > 0) {
+        container.style.display = 'block';
+        images.forEach(img => {
+            const div = document.createElement('div');
+            div.style.display = 'flex';
+            div.style.flexDirection = 'column';
+            div.style.alignItems = 'center';
+            div.style.gap = '4px';
+            div.style.position = 'relative';
+            
+            // Image block
+            const imgDiv = document.createElement('div');
+            imgDiv.style.width = '80px';
+            imgDiv.style.height = '60px';
+            imgDiv.style.borderRadius = '6px';
+            imgDiv.style.overflow = 'hidden';
+            imgDiv.style.border = '1px solid var(--panel-border)';
+            
+            const imageEl = document.createElement('img');
+            imageEl.src = img.url;
+            imageEl.style.width = '100%';
+            imageEl.style.height = '100%';
+            imageEl.style.objectFit = 'cover';
+            imgDiv.appendChild(imageEl);
+            div.appendChild(imgDiv);
+            
+            // Label with checkbox to delete
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.alignItems = 'center';
+            label.style.gap = '4px';
+            label.style.fontSize = '0.75rem';
+            label.style.color = 'var(--text-secondary)';
+            label.style.cursor = 'pointer';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = 'delete_images';
+            checkbox.value = img.id;
+            checkbox.style.cursor = 'pointer';
+            
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode('删除'));
+            div.appendChild(label);
+            
+            list.appendChild(div);
+        });
+    } else {
+        container.style.display = 'none';
+    }
+    
+    const modal = document.getElementById('edit-feedback-modal');
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+
+function closeEditFeedbackModal() {
+    document.getElementById('edit-feedback-modal').style.display = 'none';
+}
+
+// Bind ESC to close edit feedback modal
+window.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeEditFeedbackModal();
+    }
+});
+
+// Setup listeners on document ready
+document.addEventListener('DOMContentLoaded', function() {
+    const inputNew = document.getElementById('feedback-images');
+    if (inputNew) {
+        inputNew.addEventListener('change', function() {
+            newFeedbackFiles = newFeedbackFiles.concat(Array.from(inputNew.files));
+            handleAttachedFiles(inputNew, newFeedbackFiles, 'new-images-preview');
+        });
+    }
+    
+    const inputEdit = document.getElementById('edit-feedback-images-input');
+    if (inputEdit) {
+        inputEdit.addEventListener('change', function() {
+            editFeedbackFiles = editFeedbackFiles.concat(Array.from(inputEdit.files));
+            handleAttachedFiles(inputEdit, editFeedbackFiles, 'edit-images-preview');
+        });
+    }
+    
+    setupPasteSupport('feedback-content', 'feedback-images', newFeedbackFiles, 'new-images-preview');
+    setupPasteSupport('edit-feedback-content-input', 'edit-feedback-images-input', editFeedbackFiles, 'edit-images-preview');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,147 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卡管理系统</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2 style="margin-bottom: 2rem; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                Card System
+            </h2>
+            <nav style="display: flex; flex-direction: column; gap: 1rem;">
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary" style="justify-content: flex-start;">资源看板</a>
+                {% if request.user.role == 'APPLICANT' or request.user.role == 'ADMIN' %}
+                <a href="{% url 'apply' %}" class="btn btn-secondary" style="justify-content: flex-start;">资源申请</a>
+                {% endif %}
+                {% if request.user.role == 'TEAM_LEADER' or request.user.role == 'APPROVER' or request.user.role == 'DEPT_HEAD' or request.user.role == 'ADMIN' %}
+                <a href="{% url 'approve' %}" class="btn btn-secondary" style="justify-content: flex-start; align-items: center;">
+                    待办审批
+                    {% if sidebar_counts.pending_approve > 0 %}
+                    <span style="background: var(--danger-color); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-weight: bold;">{{ sidebar_counts.pending_approve }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+                {% if request.user.role == 'EXECUTOR' or request.user.role == 'ADMIN' %}
+                <a href="{% url 'execute' %}" class="btn btn-secondary" style="justify-content: flex-start; align-items: center;">
+                    待办执行
+                    {% if sidebar_counts.pending_execute > 0 %}
+                    <span style="background: var(--danger-color); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-weight: bold;">{{ sidebar_counts.pending_execute }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+                {% if request.user.role == 'EXECUTOR' or request.user.role == 'ADMIN' %}
+                <a href="{% url 'assets' %}" class="btn btn-secondary" style="justify-content: flex-start;">物料管理</a>
+                {% endif %}
+                <a href="{% url 'statistics' %}" class="btn btn-secondary" style="justify-content: flex-start;">累计统计</a>
+                <a href="{% url 'feedback' %}" class="btn btn-secondary" style="justify-content: flex-start;">问题反馈</a>
+                {% if request.user.is_staff or request.user.role == 'ADMIN' %}
+                <a href="/admin/" class="btn btn-secondary" style="justify-content: flex-start;" target="_blank">系统后台</a>
+                {% endif %}
+            </nav>
+
+        </div>
+ 
+         <!-- Main Content -->
+         <div class="main-content animate-fade-in">
+             <!-- Top Header Profile Widget -->
+             <div class="top-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 2rem; gap: 1rem;">
+                 <div style="display: flex; align-items: center; gap: 1rem; padding: 6px 16px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--panel-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+                     <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                         <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">{{ request.user.username }}</span>
+                         <span style="font-size: 0.75rem; color: var(--text-secondary);">{{ request.user.get_role_display }}</span>
+                     </div>
+                     <div style="width: 1px; height: 24px; background: var(--panel-border);"></div>
+                     <a href="{% url 'change_password' %}" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-color: var(--accent-color); color: var(--accent-hover); height: 32px; display: inline-flex; align-items: center;">修改密码</a>
+                     <form action="{% url 'logout' %}" method="post" style="margin: 0; display: inline-flex; align-items: center;">
+                         {% csrf_token %}
+                         <button type="submit" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-color: var(--danger-color); color: var(--danger-color); height: 32px; display: inline-flex; align-items: center;">退出登录</button>
+                     </form>
+                 </div>
+             </div>
+
+             {% if messages %}
+             <ul class="messages">
+                 {% for message in messages %}
+                 <li class="{{ message.tags }}">{{ message }}</li>
+                 {% endfor %}
+             </ul>
+             {% endif %}
+ 
+             {% block content %}
+             {% endblock %}
+         </div>
+     </div>
+
+     <!-- Global Image Lightbox Modal -->
+     <div id="global-lightbox" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center;" onclick="closeImageLightbox()">
+         <span style="position: absolute; top: 20px; right: 20px; color: white; font-size: 2.5rem; font-weight: bold; cursor: pointer; user-select: none;">&times;</span>
+         <img id="global-lightbox-img" src="" alt="预览大图" style="max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); object-fit: contain;" onclick="event.stopPropagation()" />
+     </div>
+     
+     <script>
+     function openImageLightbox(src) {
+         const lightbox = document.getElementById('global-lightbox');
+         const img = document.getElementById('global-lightbox-img');
+         if (lightbox && img) {
+             document.body.appendChild(lightbox);
+             img.src = src;
+             lightbox.style.display = 'flex';
+         }
+     }
+     
+     function closeImageLightbox() {
+         const lightbox = document.getElementById('global-lightbox');
+         if (lightbox) {
+             lightbox.style.display = 'none';
+         }
+     }
+     
+     // Bind Escape key to close the lightbox
+     window.addEventListener('keydown', function(event) {
+         if (event.key === 'Escape') {
+             closeImageLightbox();
+         }
+     });
+
+     // Global Toast Notification Helper
+     function showGlobalToast(message, type = 'success') {
+         const toast = document.getElementById('global-toast');
+         const icon = document.getElementById('global-toast-icon');
+         const msg = document.getElementById('global-toast-msg');
+         if (toast && icon && msg) {
+             msg.textContent = message;
+             if (type === 'success') {
+                 icon.textContent = '✓';
+                 icon.style.color = 'var(--success-color)';
+                 toast.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+             } else {
+                 icon.textContent = '✗';
+                 icon.style.color = 'var(--danger-color)';
+                 toast.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+             }
+             toast.style.display = 'flex';
+             toast.style.opacity = '0';
+             setTimeout(() => { toast.style.opacity = '1'; }, 10);
+             
+             // Auto hide after 4 seconds
+             setTimeout(() => {
+                 toast.style.opacity = '0';
+                 setTimeout(() => { toast.style.display = 'none'; }, 300);
+             }, 4000);
+         }
+     }
+     </script>
+
+     <!-- Global Toast Overlay -->
+     <div id="global-toast" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 8px; background: rgba(30, 32, 40, 0.9); border: 1px solid var(--panel-border); box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 3000; align-items: center; gap: 8px; transition: all 0.3s ease;">
+         <span id="global-toast-icon" style="font-weight: bold; font-size: 1.1rem;"></span>
+         <span id="global-toast-msg" style="color: var(--text-primary); font-size: 0.95rem;"></span>
+     </div>
+ </body>
+ </html>

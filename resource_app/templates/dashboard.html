@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>资源大盘与看板</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-title">部门卡资源总量</div>
+        <div class="stat-value">{{ total_cards }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+        <div class="stat-title">已分配总量</div>
+        <div class="stat-value">{{ allocated_cards }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--success-color);">
+        <div class="stat-title">未分配总量</div>
+        <div class="stat-value">{{ unallocated_cards }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+        <div class="stat-title">待审批申请</div>
+        <div class="stat-value">{{ pending_count }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--accent-color);">
+        <div class="stat-title">待执行申请</div>
+        <div class="stat-value">{{ executing_count }}</div>
+    </div>
+</div>
+
+<!-- 通知区域 -->
+<div class="glass-panel" style="margin-bottom: 2rem;">
+    <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">我的最新通知</h2>
+    {% if notifications %}
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            {% for notification in notifications %}
+            <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03);">
+                <!-- 彩色圆点指示器 -->
+                <span style="
+                    flex-shrink: 0;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    display: inline-block;
+                    background:
+                        {% if notification.type == 'success' %}var(--success-color)
+                        {% elif notification.type == 'danger' %}var(--danger-color)
+                        {% elif notification.type == 'warning' %}var(--warning-color)
+                        {% else %}var(--accent-color)
+                        {% endif %};
+                "></span>
+                <!-- 通知消息 -->
+                <span style="flex: 1; color: var(--text-primary); font-size: 0.9rem;">{{ notification.message }}</span>
+                <!-- 时间 -->
+                <span style="flex-shrink: 0; color: var(--text-secondary); font-size: 0.8rem; white-space: nowrap;">{{ notification.time|timesince }} 前</span>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p style="color: var(--text-secondary);">暂无通知</p>
+    {% endif %}
+</div>
+
+<div class="glass-panel" style="margin-bottom: 2rem;">
+    <h2 style="margin-bottom: 1rem; font-size: 1.25rem;">各卡资源库存状态</h2>
+    {% if not inventory %}
+        <p style="color: var(--text-secondary);">暂无资源数据，请联系管理员录入。</p>
+    {% else %}
+        <!-- 筛选栏 -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
+            <label style="font-size: 0.9rem; color: var(--text-secondary);">筛选：</label>
+            <select id="filter-cardType" class="form-control" style="width: auto; min-width: 160px;" onchange="filterInventoryTable()">
+                <option value="">全部型号</option>
+                {% for ct in all_card_types %}
+                <option value="{{ ct }}">{{ ct }}</option>
+                {% endfor %}
+            </select>
+            <select id="filter-cardForm" class="form-control" style="width: auto; min-width: 160px;" onchange="filterInventoryTable()">
+                <option value="">全部形态</option>
+                {% for cf in all_card_forms %}
+                <option value="{{ cf }}">{{ cf }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <table class="data-table" id="inventory-table">
+            <thead>
+                <tr>
+                    <th>卡资源型号</th>
+                    <th>卡资源名称</th>
+                    <th>形态</th>
+                    <th>所在地域</th>
+                    <th>总数量</th>
+                    <th>已分配</th>
+                    <th>剩余可用</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in inventory %}
+                <tr data-cardtype="{{ item.cardType }}" data-cardform="{{ item.cardForm }}">
+                    <td><strong>{{ item.cardType }}</strong></td>
+                    <td>{{ item.cardName }}</td>
+                    <td>{{ item.cardForm }}</td>
+                    <td>{{ item.region }}</td>
+                    <td>{{ item.totalCount }}</td>
+                    <td>{{ item.allocatedCount }}</td>
+                    <td style="color: {% if item.remain > 0 %}var(--success-color){% else %}var(--danger-color){% endif %}; font-weight: bold;">
+                        {{ item.remain }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot style="border-top: 2px solid var(--panel-border); font-weight: bold; background: rgba(255, 255, 255, 0.02);">
+                <tr>
+                    <td colspan="4" style="text-align: right;">合计：</td>
+                    <td id="inventory-total-count">0</td>
+                    <td id="inventory-allocated-count">0</td>
+                    <td id="inventory-remain-count">0</td>
+                </tr>
+            </tfoot>
+        </table>
+    {% endif %}
+</div>
+
+<div class="glass-panel">
+    <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">当前资源分配详细情况</h2>
+    {% if not applications %}
+        <p style="color: var(--text-secondary);">暂无分配详情。</p>
+    {% else %}
+        <!-- 分配详情筛选栏 -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: center; flex-wrap: wrap;">
+            <label style="font-size: 0.9rem; color: var(--text-secondary);">筛选：</label>
+            <input type="text" id="filter-alloc-project" class="form-control" style="width: auto; min-width: 180px; padding: 8px 12px; font-size: 0.9rem;" placeholder="搜索项目名称..." oninput="filterAllocationsTable()" />
+            
+            <select id="filter-alloc-cardType" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllocationsTable()">
+                <option value="">所有卡型号</option>
+                {% for ct in all_card_types %}
+                <option value="{{ ct }}">{{ ct }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-alloc-cardForm" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllocationsTable()">
+                <option value="">所有形态</option>
+                {% for cf in all_card_forms %}
+                <option value="{{ cf }}">{{ cf }}</option>
+                {% endfor %}
+            </select>
+            
+            <select id="filter-alloc-status" class="form-control" style="width: auto; min-width: 150px; padding: 8px 12px; font-size: 0.9rem;" onchange="filterAllocationsTable()">
+                <option value="">所有状态</option>
+                <option value="APPROVED">已审批(待执行)</option>
+                <option value="EXECUTED">已执行</option>
+            </select>
+        </div>
+
+        <table class="data-table" id="allocations-table">
+            <thead>
+                <tr>
+                    <th>项目名称</th>
+                    <th>申请人</th>
+                    <th>团队</th>
+                    <th>分配资源名称</th>
+                    <th>形态</th>
+                    <th>型号</th>
+                    <th>地域</th>
+                    <th>分配数量</th>
+                    <th>使用时间</th>
+                    <th>附件</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for app in applications %}
+                <tr class="alloc-row" data-project="{{ app.project }}" data-cardtype="{{ app.allocatedCardType|default:app.cardType }}" data-cardform="{{ app.allocatedCardForm|default:app.cardForm }}" data-status="{{ app.status }}">
+                    <td>{{ app.project }}</td>
+                    <td>{{ app.applicant.username }}</td>
+                    <td>{{ app.team }}</td>
+                    <td><strong>{{ app.allocatedCardName|default:"-" }}</strong></td>
+                    <td>{{ app.allocatedCardForm|default:app.cardForm }}</td>
+                    <td>{{ app.allocatedCardType|default:app.cardType }}</td>
+                    <td>{{ app.allocatedRegion|default:"-" }}</td>
+                    <td>{{ app.allocatedCount|default:app.count }}</td>
+                    <td>{{ app.duration }}</td>
+                    <td>
+                        {% if app.attachment and app.status != 'EXECUTED' %}
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                            <img src="{{ app.attachment.url }}" alt="附件" style="width: 40px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--panel-border); transition: transform 0.2s;" onclick="openImageLightbox(this.src)" title="点击查看大图" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" />
+                            <a href="{{ app.attachment.url }}" download style="font-size: 0.7rem; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 2px;">
+                                下载
+                            </a>
+                        </div>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; background: {% if app.status == 'EXECUTED' %}rgba(16, 185, 129, 0.2){% else %}rgba(99, 102, 241, 0.2){% endif %}; color: {% if app.status == 'EXECUTED' %}var(--success-color){% else %}var(--accent-color){% endif %};">
+                            {{ app.get_status_display }}
+                        </span>
+                        {% if app.is_overdue %}
+                        <span style="margin-left: 6px; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.15); color: var(--danger-color); border: 1px solid rgba(239, 68, 68, 0.3); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;">
+                            ⚠️ 已逾期
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot style="border-top: 2px solid var(--panel-border); font-weight: bold; background: rgba(255, 255, 255, 0.02);">
+                <tr>
+                    <td colspan="7" style="text-align: right;">合计：</td>
+                    <td id="allocations-total-count">0</td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
+        </table>
+    {% endif %}
+</div>
+
+<script>
+function filterInventoryTable() {
+    const filterType = document.getElementById('filter-cardType').value;
+    const filterForm = document.getElementById('filter-cardForm').value;
+    const rows = document.querySelectorAll('#inventory-table tbody tr');
+    let totalCount = 0;
+    let allocatedCount = 0;
+    let remainCount = 0;
+
+    rows.forEach(row => {
+        const rowType = row.getAttribute('data-cardtype');
+        const rowForm = row.getAttribute('data-cardform');
+        const typeMatch = !filterType || rowType === filterType;
+        const formMatch = !filterForm || rowForm === filterForm;
+        
+        if (typeMatch && formMatch) {
+            row.style.display = '';
+            const cells = row.getElementsByTagName('td');
+            if (cells.length >= 7) {
+                totalCount += parseInt(cells[4].textContent.trim()) || 0;
+                allocatedCount += parseInt(cells[5].textContent.trim()) || 0;
+                remainCount += parseInt(cells[6].textContent.trim()) || 0;
+            }
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    const totalCountElem = document.getElementById('inventory-total-count');
+    const allocatedCountElem = document.getElementById('inventory-allocated-count');
+    const remainCountElem = document.getElementById('inventory-remain-count');
+    if (totalCountElem) totalCountElem.textContent = totalCount;
+    if (allocatedCountElem) allocatedCountElem.textContent = allocatedCount;
+    if (remainCountElem) remainCountElem.textContent = remainCount;
+}
+
+function filterAllocationsTable() {
+    const filterProj = document.getElementById('filter-alloc-project').value.trim().toLowerCase();
+    const filterType = document.getElementById('filter-alloc-cardType').value;
+    const filterForm = document.getElementById('filter-alloc-cardForm').value;
+    const filterStatus = document.getElementById('filter-alloc-status').value;
+    let totalAllocated = 0;
+    
+    const rows = document.querySelectorAll('#allocations-table tbody tr.alloc-row');
+    rows.forEach(row => {
+        const rowProj = row.getAttribute('data-project').toLowerCase();
+        const rowType = row.getAttribute('data-cardtype');
+        const rowForm = row.getAttribute('data-cardform');
+        const rowStatus = row.getAttribute('data-status');
+        
+        const projMatch = !filterProj || rowProj.includes(filterProj);
+        const typeMatch = !filterType || rowType === filterType;
+        const formMatch = !filterForm || rowForm === filterForm;
+        const statusMatch = !filterStatus || rowStatus === filterStatus;
+        
+        if (projMatch && typeMatch && formMatch && statusMatch) {
+            row.style.display = '';
+            const cells = row.getElementsByTagName('td');
+            if (cells.length >= 8) {
+                totalAllocated += parseInt(cells[7].textContent.trim()) || 0;
+            }
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    const totalAllocatedElem = document.getElementById('allocations-total-count');
+    if (totalAllocatedElem) totalAllocatedElem.textContent = totalAllocated;
+}
+
+// Initialize sum totals on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    filterInventoryTable();
+    filterAllocationsTable();
+});
+</script>
+{% endblock %}
