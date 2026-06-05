@@ -17,6 +17,7 @@ from django.db import transaction
 
 
 BARE_METAL_FORM = '裸机'
+PASSWORD_PLACEHOLDER = '••••••'
 
 
 def is_bare_metal_value(value):
@@ -1420,7 +1421,9 @@ def asset_management_view(request):
             
             asset.name = request.POST.get('name')
             asset.ip = request.POST.get('ip', '')
-            asset.password = request.POST.get('password', '')
+            submitted_password = request.POST.get('password', '')
+            if submitted_password != PASSWORD_PLACEHOLDER:
+                asset.password = submitted_password
             
             owner_id = request.POST.get('owner')
             if owner_id:

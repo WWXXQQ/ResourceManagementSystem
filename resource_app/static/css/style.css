@@ -283,3 +283,82 @@ select option:hover {
 .data-table tr:hover {
   background: rgba(255, 255, 255, 0.02);
 }
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+    padding: 16px;
+  }
+
+  .sidebar h2 {
+    margin-bottom: 1rem !important;
+    font-size: 1.2rem;
+  }
+
+  .sidebar nav {
+    flex-direction: row !important;
+    gap: 0.5rem !important;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .sidebar nav .btn {
+    flex: 0 0 auto;
+    padding: 8px 12px !important;
+    font-size: 0.85rem !important;
+    white-space: nowrap;
+  }
+
+  .main-content {
+    width: 100%;
+    padding: 20px 16px;
+    overflow-x: hidden;
+  }
+
+  .top-header {
+    justify-content: flex-start !important;
+    margin-bottom: 1rem !important;
+    overflow-x: auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .glass-panel {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .top-header > div {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+}

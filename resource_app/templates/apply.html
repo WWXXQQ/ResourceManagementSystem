@@ -883,6 +883,24 @@ function sendWorkflowReminder(appId) {
     });
 }
 
+function escapeHtml(value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    return text.replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+function safeDisplay(value, fallback = '') {
+    if (value === null || value === undefined || value === '') {
+        return fallback;
+    }
+    return escapeHtml(value);
+}
+
 // Show Application Details Modal
 function showAppDetails(appId) {
     const modal = document.getElementById('app-details-modal');
@@ -895,12 +913,13 @@ function showAppDetails(appId) {
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            content.innerHTML = `<div style="text-align:center; color:var(--danger-color); padding:2rem;">${data.error}</div>`;
+            content.innerHTML = `<div style="text-align:center; color:var(--danger-color); padding:2rem;">${safeDisplay(data.error)}</div>`;
             return;
         }
         
         let assetsHtml = '';
         if (data.assets && data.assets.length > 0) {
+            const showPasswordColumn = data.assets.some(a => a.has_password_permission);
             assetsHtml = `
                 <div style="margin-top: 1.5rem;">
                     <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">绑定物料 (Assets)</h4>
@@ -911,26 +930,29 @@ function showAppDetails(appId) {
                                 <th>IP</th>
                                 <th>规格</th>
                                 <th>状态</th>
-                                ${data.assets[0].has_password_permission ? '<th>密码</th>' : ''}
+                                ${showPasswordColumn ? '<th>密码</th>' : ''}
                             </tr>
                         </thead>
                         <tbody>
-                            ${data.assets.map(a => `
+                            ${data.assets.map(a => {
+                                const assetId = String(a.id).replace(/[^0-9]/g, '');
+                                return `
                                 <tr>
-                                    <td>${a.name}</td>
-                                    <td>${a.ip || '-'}</td>
-                                    <td>${a.specifications || '-'}</td>
-                                    <td>${a.status}</td>
+                                    <td>${safeDisplay(a.name, '-')}</td>
+                                    <td>${safeDisplay(a.ip, '-')}</td>
+                                    <td>${safeDisplay(a.specifications, '-')}</td>
+                                    <td>${safeDisplay(a.status, '-')}</td>
                                     ${a.has_password_permission ? `
                                     <td>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            <span id="pwd-${a.id}" style="font-family: monospace; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">••••••</span>
-                                            <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.75rem;" onclick="togglePasswordVisibility(this, '${a.id}')">显示</button>
+                                            <span id="pwd-${assetId}" style="font-family: monospace; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">••••••</span>
+                                            <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.75rem;" onclick="togglePasswordVisibility(this, '${assetId}')">显示</button>
                                         </div>
                                     </td>
-                                    ` : ''}
+                                    ` : (showPasswordColumn ? '<td>-</td>' : '')}
                                 </tr>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -939,37 +961,37 @@ function showAppDetails(appId) {
         
         content.innerHTML = `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.9rem; line-height: 1.6;">
-                <div><strong>申请人：</strong> ${data.applicant}</div>
-                <div><strong>团队：</strong> ${data.team}</div>
-                <div><strong>项目：</strong> ${data.project}</div>
-                <div><strong>状态：</strong> <span style="color:var(--accent-color);">${data.status_display}</span></div>
-                <div><strong>申请卡形态：</strong> ${data.cardForm}</div>
-                <div><strong>申请卡型号：</strong> ${data.cardType}</div>
-                <div><strong>申请数量：</strong> ${data.count} (最少 ${data.minCount})</div>
-                <div><strong>使用人：</strong> ${data.users}</div>
-                <div><strong>起止时间：</strong> ${data.startDate} ~ ${data.endDate}</div>
-                <div><strong>优先级：</strong> ${data.priority}</div>
+                <div><strong>申请人：</strong> ${safeDisplay(data.applicant, '-')}</div>
+                <div><strong>团队：</strong> ${safeDisplay(data.team, '-')}</div>
+                <div><strong>项目：</strong> ${safeDisplay(data.project, '-')}</div>
+                <div><strong>状态：</strong> <span style="color:var(--accent-color);">${safeDisplay(data.status_display, '-')}</span></div>
+                <div><strong>申请卡形态：</strong> ${safeDisplay(data.cardForm, '-')}</div>
+                <div><strong>申请卡型号：</strong> ${safeDisplay(data.cardType, '-')}</div>
+                <div><strong>申请数量：</strong> ${safeDisplay(data.count, '0')} (最少 ${safeDisplay(data.minCount, '0')})</div>
+                <div><strong>使用人：</strong> ${safeDisplay(data.users, '-')}</div>
+                <div><strong>起止时间：</strong> ${safeDisplay(data.startDate, '-')} ~ ${safeDisplay(data.endDate, '-')}</div>
+                <div><strong>优先级：</strong> ${safeDisplay(data.priority, '-')}</div>
             </div>
             
             <div style="margin-top: 1.5rem;">
                 <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">详细说明</h4>
                 <div style="font-size: 0.9rem; line-height: 1.6;">
-                    <div><strong>用途：</strong> ${data.purpose}</div>
-                    <div><strong>优先级理由：</strong> ${data.priorityReason}</div>
-                    ${data.note ? `<div><strong>备注：</strong> ${data.note}</div>` : ''}
+                    <div><strong>用途：</strong> ${safeDisplay(data.purpose, '-')}</div>
+                    <div><strong>优先级理由：</strong> ${safeDisplay(data.priorityReason, '-')}</div>
+                    ${data.note ? `<div><strong>备注：</strong> ${safeDisplay(data.note)}</div>` : ''}
                 </div>
             </div>
             
             <div style="margin-top: 1.5rem;">
                 <h4 style="margin-bottom: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem;">审批与分配</h4>
                 <div style="font-size: 0.9rem; line-height: 1.6; background: rgba(255,255,255,0.02); padding: 10px; border-radius: 6px;">
-                    <div><strong>组长意见：</strong> ${data.team_leader_note || '-'}</div>
-                    <div><strong>预审意见：</strong> ${data.pre_approver_note || '-'}</div>
-                    <div><strong>终审意见：</strong> ${data.final_approver_note || '-'}</div>
+                    <div><strong>组长意见：</strong> ${safeDisplay(data.team_leader_note, '-')}</div>
+                    <div><strong>预审意见：</strong> ${safeDisplay(data.pre_approver_note, '-')}</div>
+                    <div><strong>终审意见：</strong> ${safeDisplay(data.final_approver_note, '-')}</div>
                     ${data.allocatedCount ? `
                     <div style="margin-top: 8px; color: var(--success-color);">
-                        <strong>已分配资源：</strong> ${data.allocatedCardType} (${data.allocatedCardForm}) x ${data.allocatedCount}
-                        <br><strong>分配区域：</strong> ${data.allocatedRegion} (${data.allocatedCardName})
+                        <strong>已分配资源：</strong> ${safeDisplay(data.allocatedCardType, '-')} (${safeDisplay(data.allocatedCardForm, '-')}) x ${safeDisplay(data.allocatedCount, '0')}
+                        <br><strong>分配区域：</strong> ${safeDisplay(data.allocatedRegion, '-')} (${safeDisplay(data.allocatedCardName, '-')})
                     </div>
                     ` : ''}
                 </div>

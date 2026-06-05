@@ -76,7 +76,7 @@ def main():
         "TEAM": [TEAM],
         "CARD_FORM": [BARE_METAL, INFERENCE_POOL],
         "CARD_TYPE": ["A100", "H100", "L40S"],
-        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution", "E2E-Password"],
+        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution", "E2E-Password", "E2E-XSS"],
         "REGION": [BEIJING],
     }
     for category, values in options.items():
@@ -227,6 +227,32 @@ def main():
         asset=password_asset,
         application=password_app,
         allocated_cards=1,
+    )
+
+    Application.objects.create(
+        applicant=users["applicant"],
+        users="e2e_applicant",
+        team=TEAM,
+        cardForm=BARE_METAL,
+        cardType="A100",
+        purpose='<img src=x onerror="window.__e2e_xss_triggered=1">',
+        project="E2E-XSS",
+        model_used="e2e-model",
+        priority="LOW",
+        priorityReason='<img src=x onerror="window.__e2e_xss_triggered=1">',
+        note='<img src=x onerror="window.__e2e_xss_triggered=1">',
+        count=1,
+        minCount=1,
+        startDate=date.today(),
+        endDate=date.today() + timedelta(days=7),
+        duration="7 days",
+        status="EXECUTED",
+        allocatedCount=1,
+        allocatedCardType="A100",
+        allocatedCardForm=BARE_METAL,
+        allocatedRegion=BEIJING,
+        allocatedCardName="E2E-A100-Beijing-Pool",
+        executionResult='<img src=x onerror="window.__e2e_xss_triggered=1">',
     )
 
     ResourceAsset.objects.create(
