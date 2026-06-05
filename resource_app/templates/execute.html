@@ -291,6 +291,7 @@
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="release" />
                                 <input type="hidden" name="app_id" value="{{ app.id }}" />
+                                <input type="number" name="release_count" min="1" max="{{ app.allocatedCount }}" value="{{ app.allocatedCount }}" class="form-control" title="释放卡数" style="display: inline-block; width: 72px; padding: 4px 6px; font-size: 0.8rem; margin-right: 4px;" />
                                 <button type="submit" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 8px; border-color: var(--danger-color); color: var(--danger-color);">释放资源</button>
                             </form>
                             {% else %}

@@ -7,7 +7,8 @@
     "test": "tests"
   },
   "scripts": {
-    "test:e2e": "python tests/e2e/seed_e2e_data.py && playwright test tests/e2e/resource-management.spec.js --workers=1"
+    "test:e2e": "python tests/e2e/seed_e2e_data.py && playwright test tests/e2e/resource-management.spec.js --workers=1",
+    "test:e2e:comprehensive": "python tests/e2e/seed_comprehensive_data.py && node tests/e2e/comprehensive-validation.js && python tests/e2e/assert_comprehensive_state.py"
   },
   "repository": {
     "type": "git",

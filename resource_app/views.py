@@ -1006,22 +1006,59 @@ def execute_view(request):
                 if application.status != 'EXECUTED':
                     messages.error(request, f'该申请不处于“已执行”状态（当前状态：{application.get_status_display()}），操作已取消。')
                     return redirect('/execute/?tab=history')
-                    
+
+                active_count = application.allocatedCount or 0
+                try:
+                    release_count = int(request.POST.get('release_count') or active_count)
+                except (TypeError, ValueError):
+                    messages.error(request, '释放卡数量不合法，请重新输入。')
+                    return redirect('/execute/?tab=history')
+
+                if release_count <= 0:
+                    messages.error(request, '释放卡数量必须大于 0。')
+                    return redirect('/execute/?tab=history')
+                if active_count <= 0:
+                    messages.error(request, '该申请没有可释放的剩余卡资源。')
+                    return redirect('/execute/?tab=history')
+                if release_count > active_count:
+                    messages.error(request, f'释放卡数量不能超过当前剩余分配数量（{active_count} 张）。')
+                    return redirect('/execute/?tab=history')
+
+                allocations = list(
+                    AssetAllocation.objects.select_for_update()
+                    .filter(application=application)
+                    .order_by('id')
+                )
+                allocated_asset_cards = sum(alloc.allocated_cards for alloc in allocations)
+                if allocated_asset_cards and release_count > allocated_asset_cards:
+                    messages.error(request, f'释放卡数量不能超过当前绑定资产卡数（{allocated_asset_cards} 张）。')
+                    return redirect('/execute/?tab=history')
+
+                if application.allocation_details:
+                    allocated_detail_count = sum(int(detail.get('count') or 0) for detail in application.allocation_details)
+                    if release_count > allocated_detail_count:
+                        messages.error(request, f'释放卡数量不能超过当前分配明细剩余数量（{allocated_detail_count} 张）。')
+                        return redirect('/execute/?tab=history')
+
                 # 恢复库存数量，使用 select_for_update 行锁
+                remaining_inventory_release = release_count
                 if application.allocation_details:
                     # 使用精准的拆分分配表恢复库存
+                    new_details = []
                     for detail in application.allocation_details:
+                        detail = dict(detail)
                         inv_id = detail.get('inventory_id')
-                        count_to_return = detail.get('count', 0)
+                        allocated_in_detail = int(detail.get('count') or 0)
+                        count_to_return = min(remaining_inventory_release, allocated_in_detail)
                         
                         inv = None
-                        if inv_id:
+                        if count_to_return > 0 and inv_id:
                             try:
                                 inv = ResourceInventory.objects.select_for_update().get(id=inv_id)
                             except ResourceInventory.DoesNotExist:
                                 pass
                                 
-                        if not inv:
+                        if count_to_return > 0 and not inv:
                             # 降级方案：根据卡池名称和地域等做模糊匹配归还
                             fallback_invs = ResourceInventory.objects.select_for_update().filter(
                                 cardName=detail.get('cardName'),
@@ -1032,9 +1069,16 @@ def execute_view(request):
                             if fallback_invs.exists():
                                 inv = fallback_invs.first()
                                 
-                        if inv:
+                        if count_to_return > 0 and inv:
                             inv.allocatedCount = max(0, inv.allocatedCount - count_to_return)
                             inv.save()
+                            detail['count'] = allocated_in_detail - count_to_return
+                            remaining_inventory_release -= count_to_return
+
+                        if detail.get('count', 0) > 0:
+                            new_details.append(detail)
+
+                    application.allocation_details = new_details
                 else:
                     # 兼容历史单值归还数据
                     inventories = ResourceInventory.objects.select_for_update().filter(
@@ -1045,28 +1089,46 @@ def execute_view(request):
                     )
                     if inventories.exists():
                         inv = inventories.first()
-                        inv.allocatedCount = max(0, inv.allocatedCount - (application.allocatedCount or 0))
+                        inv.allocatedCount = max(0, inv.allocatedCount - release_count)
                         inv.save()
                 
                 # 自动释放绑定的物料资产
-                allocations = AssetAllocation.objects.select_for_update().filter(application=application)
-                released_count = allocations.count()
+                remaining_asset_release = release_count
+                released_count = 0
                 for alloc in allocations:
+                    if remaining_asset_release <= 0:
+                        break
+                    cards_to_release = min(remaining_asset_release, alloc.allocated_cards)
                     asset = alloc.asset
-                    asset.used_cards = max(0, asset.used_cards - alloc.allocated_cards)
+                    asset.used_cards = max(0, asset.used_cards - cards_to_release)
                     if asset.used_cards <= 0:
                         asset.status = 'IDLE'
                     else:
                         asset.status = 'PARTIAL'
-                    alloc.delete()
+                    if cards_to_release >= alloc.allocated_cards:
+                        alloc.delete()
+                    else:
+                        alloc.allocated_cards -= cards_to_release
+                        alloc.save()
                     refresh_asset_summary(asset)
+                    released_count += 1
+                    remaining_asset_release -= cards_to_release
                     
-                application.status = 'RELEASED'
+                application.allocatedCount = max(0, active_count - release_count)
+                if application.allocatedCount <= 0:
+                    application.status = 'RELEASED'
+                    audit_msg = f"[资源全部释放：释放 {release_count} 张卡]"
+                else:
+                    application.status = 'EXECUTED'
+                    audit_msg = f"[资源部分释放：释放 {release_count} 张卡，剩余 {application.allocatedCount} 张卡]"
+                application.executionResult = f"{audit_msg}\n{application.executionResult or ''}".strip()
                 application.save()
                 
-            msg = f'已成功释放项目「{application.project}」占用的资源，对应卡资源库存已恢复。'
+            msg = f'已成功释放项目「{application.project}」占用的 {release_count} 张卡资源，对应卡资源库存已恢复。'
             if released_count > 0:
-                msg += f' 同时已自动释放并解绑了 {released_count} 台物理/虚拟物料设备。'
+                msg += f' 同时已更新 {released_count} 台物理/虚拟物料设备绑定。'
+            if application.status == 'EXECUTED':
+                msg += f' 当前申请仍剩余 {application.allocatedCount} 张卡处于已执行状态。'
             messages.success(request, msg)
             return redirect('/execute/?tab=history')
             

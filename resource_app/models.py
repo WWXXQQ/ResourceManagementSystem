@@ -442,6 +442,23 @@ def capture_old_asset(sender, instance, **kwargs):
     else:
         instance._old_asset = None
 
+
+def get_or_create_asset_capacity_inventory(card_type, card_form, region):
+    inventory = ResourceInventory.objects.filter(
+        cardType=card_type,
+        cardForm=card_form,
+        region=region,
+    ).order_by('id').first()
+    if inventory:
+        return inventory
+    return ResourceInventory.objects.create(
+        cardType=card_type,
+        cardForm=card_form,
+        region=region,
+        cardName=f'物理资产池_{card_type}',
+    )
+
+
 @receiver(post_save, sender=ResourceAsset)
 def sync_inventory_on_asset_save(sender, instance, created, **kwargs):
     ctype = instance.card_type or '未知'
@@ -451,12 +468,7 @@ def sync_inventory_on_asset_save(sender, instance, created, **kwargs):
 
     if created:
         # 新增物料，增加大盘库存
-        inv, _ = ResourceInventory.objects.get_or_create(
-            cardType=ctype,
-            cardForm=cform,
-            region=cregion,
-            defaults={'cardName': f'物理资产池_{ctype}'}
-        )
+        inv = get_or_create_asset_capacity_inventory(ctype, cform, cregion)
         inv.totalCount += count
         inv.save()
     else:
@@ -482,12 +494,7 @@ def sync_inventory_on_asset_save(sender, instance, created, **kwargs):
                     old_inv.save()
                     
                 # 2. 增加新资产
-                new_inv, _ = ResourceInventory.objects.get_or_create(
-                    cardType=ctype,
-                    cardForm=cform,
-                    region=cregion,
-                    defaults={'cardName': f'物理资产池_{ctype}'}
-                )
+                new_inv = get_or_create_asset_capacity_inventory(ctype, cform, cregion)
                 new_inv.totalCount += count
                 new_inv.save()
 
