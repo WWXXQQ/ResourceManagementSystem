@@ -183,9 +183,9 @@
                                 <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                                     {% for asset in cand.assets %}
                                     <div style="display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.1);">
-                                        <input type="checkbox" name="preempted_assets_{{ cand.app_id }}" value="{{ asset.id }}" class="preempt-checkbox-{{ app.id }}-{{ cand.app_id }}" onchange="toggleCardInput(this, 'preempt_card_{{ cand.app_id }}_{{ asset.id }}'); checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }})" style="cursor: pointer; width: auto;" />
+                                        <input type="checkbox" name="preempted_assets_{{ cand.app_id }}" value="{{ asset.id }}" class="preempt-checkbox-{{ app.id }}-{{ cand.app_id }}" onchange="toggleCardInput(this, 'preempt_card_{{ cand.app_id }}_{{ asset.id }}'); checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }}, this)" style="cursor: pointer; width: auto;" />
                                         <span><strong>{{ asset.name }}</strong> {% if asset.ip %}(IP: {{ asset.ip }}){% endif %} - 占用: {{ asset.allocated_cards }}卡</span>
-                                        <input type="number" name="preempt_card_{{ cand.app_id }}_{{ asset.id }}" id="preempt_card_{{ cand.app_id }}_{{ asset.id }}" class="form-control preempt-input-{{ app.id }}-{{ cand.app_id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.allocated_cards }}" value="{{ asset.allocated_cards }}" disabled oninput="checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }})" />
+                                        <input type="number" name="preempt_card_{{ cand.app_id }}_{{ asset.id }}" id="preempt_card_{{ cand.app_id }}_{{ asset.id }}" class="form-control preempt-input-{{ app.id }}-{{ cand.app_id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.allocated_cards }}" value="{{ asset.allocated_cards }}" disabled oninput="checkExactSelected({{ app.id }}, {{ cand.app_id }}, {{ cand.count }}, null, this)" />
                                         <span id="preempt_label_{{ cand.app_id }}_{{ asset.id }}" style="display:none; font-size:0.8rem; color:var(--danger-color);">张</span>
                                     </div>
                                     {% empty %}
@@ -206,9 +206,9 @@
                                 <div style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 150px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); border-radius: 6px;">
                                     {% for asset in app.idle_assets_matching %}
                                     <div style="display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px; border-radius: 4px; {% if asset.status == 'PARTIAL' %}background: rgba(99, 102, 241, 0.1);{% else %}background: rgba(0,0,0,0.2);{% endif %}">
-                                        <input type="checkbox" name="selected_assets" value="{{ asset.id }}" class="asset-checkbox-{{ app.id }}" onchange="toggleCardInput(this, 'asset_card_{{ asset.id }}'); checkMaxSelected({{ app.id }}, {{ app.allocatedCount }})" style="cursor: pointer; width: auto;" />
+                                        <input type="checkbox" name="selected_assets" value="{{ asset.id }}" class="asset-checkbox-{{ app.id }}" onchange="toggleCardInput(this, 'asset_card_{{ asset.id }}'); checkMaxSelected({{ app.id }}, {{ app.allocatedCount }}, this)" style="cursor: pointer; width: auto;" />
                                         <span><strong>{{ asset.name }}</strong> {% if asset.ip %}(IP: {{ asset.ip }}){% endif %} [总{{ asset.card_count }}卡/剩余 <span id="remain_{{ asset.id }}">{{ asset.remaining_cards }}</span>卡] {% if asset.specifications %}- {{ asset.specifications }}{% endif %}</span>
-                                        <input type="number" name="asset_card_{{ asset.id }}" id="asset_card_{{ asset.id }}" class="form-control asset-input-{{ app.id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.remaining_cards }}" value="{{ asset.remaining_cards }}" disabled oninput="checkMaxSelected({{ app.id }}, {{ app.allocatedCount }})" />
+                                        <input type="number" name="asset_card_{{ asset.id }}" id="asset_card_{{ asset.id }}" class="form-control asset-input-{{ app.id }}" style="width: 80px; padding: 2px 6px; display: none;" min="1" max="{{ asset.remaining_cards }}" value="{{ asset.remaining_cards }}" disabled oninput="checkMaxSelected({{ app.id }}, {{ app.allocatedCount }}, null, this)" />
                                         <span id="asset_label_{{ asset.id }}" style="display:none; font-size:0.8rem; color:var(--success-color);">张</span>
                                     </div>
                                     {% empty %}
@@ -310,29 +310,71 @@
 </div>
 
 <script>
-function checkExactSelected(checkbox, appId, candId, limit) {
-    const checkboxes = document.querySelectorAll(`.preempt-checkbox-${appId}-${candId}`);
-    let checkedCount = 0;
-    checkboxes.forEach(cb => {
-        if (cb.checked) checkedCount++;
-    });
-    if (checkedCount > limit) {
-        alert(`根据协调方案，该项目最多只能抽调 ${limit} 台机器！`);
-        checkbox.checked = false;
+function toggleCardInput(checkbox, inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const labelId = inputId
+        .replace('asset_card_', 'asset_label_')
+        .replace('preempt_card_', 'preempt_label_');
+    const label = document.getElementById(labelId);
+
+    if (checkbox.checked) {
+        input.disabled = false;
+        input.style.display = 'inline-block';
+        if (label) label.style.display = 'inline';
+    } else {
+        input.disabled = true;
+        input.style.display = 'none';
+        if (label) label.style.display = 'none';
     }
 }
 
-function checkMaxSelected(appId, maxCardCount, checkbox) {
-    const checkboxes = document.querySelectorAll('.asset-checkbox-' + appId);
-    const checked = Array.from(checkboxes).filter(cb => cb.checked);
-    let totalCards = 0;
-    checked.forEach(cb => {
-        totalCards += parseInt(cb.getAttribute('data-card-count')) || 1;
-    });
+function normalizedCardValue(input) {
+    const min = parseInt(input.min) || 1;
+    const max = parseInt(input.max) || min;
+    let value = parseInt(input.value);
+    if (!Number.isFinite(value) || value < min) value = min;
+    if (value > max) value = max;
+    input.value = value;
+    return value;
+}
+
+function checkExactSelected(appId, candId, limit, changedCheckbox, changedInput) {
+    const inputs = Array.from(document.querySelectorAll(`.preempt-input-${appId}-${candId}`))
+        .filter(input => !input.disabled);
+    const selectedCards = inputs.reduce((sum, input) => sum + normalizedCardValue(input), 0);
+
+    if (selectedCards > limit) {
+        alert(`根据协调方案，该项目最多只能抽调 ${limit} 张卡！`);
+        if (changedCheckbox) {
+            changedCheckbox.checked = false;
+            toggleCardInput(changedCheckbox, `preempt_card_${candId}_${changedCheckbox.value}`);
+        } else if (changedInput) {
+            const overflow = selectedCards - limit;
+            changedInput.value = Math.max(parseInt(changedInput.min) || 1, normalizedCardValue(changedInput) - overflow);
+        }
+        return false;
+    }
+    return true;
+}
+
+function checkMaxSelected(appId, maxCardCount, changedCheckbox, changedInput) {
+    const inputs = Array.from(document.querySelectorAll('.asset-input-' + appId))
+        .filter(input => !input.disabled);
+    const totalCards = inputs.reduce((sum, input) => sum + normalizedCardValue(input), 0);
+
     if (totalCards > maxCardCount) {
         alert('选中设备的总卡数 (' + totalCards + ') 不能超过已分配卡数上限 (' + maxCardCount + ' 张)。');
-        checkbox.checked = false;
+        if (changedCheckbox) {
+            changedCheckbox.checked = false;
+            toggleCardInput(changedCheckbox, 'asset_card_' + changedCheckbox.value);
+        } else if (changedInput) {
+            const overflow = totalCards - maxCardCount;
+            changedInput.value = Math.max(parseInt(changedInput.min) || 1, normalizedCardValue(changedInput) - overflow);
+        }
+        return false;
     }
+    return true;
 }
 
 function switchExecuteTab(tabName) {

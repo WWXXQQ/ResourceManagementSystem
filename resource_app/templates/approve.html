@@ -705,6 +705,7 @@ function updateApproveDynamicInventory(appId) {
             
             // 控制协调抽调面板的显示与隐藏
             const preemptPanel = document.getElementById(`preempt-panel-${appId}`);
+            const hasPreemptPanel = !!preemptPanel;
             if (preemptPanel) {
                 if (requestedCount > match.availableCount) {
                     preemptPanel.style.display = 'block';

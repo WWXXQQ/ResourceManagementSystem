@@ -7,7 +7,7 @@ from django.db.models import Sum, Q
 from django.http import JsonResponse
 from collections import defaultdict
 from datetime import date, timedelta
-from .models import Application, ResourceInventory, SystemOption, CustomUser, ResourceAsset, IssueFeedback, SystemSetting, FeedbackImage, SystemNotificationLog
+from .models import Application, ResourceInventory, SystemOption, CustomUser, ResourceAsset, IssueFeedback, SystemSetting, FeedbackImage, SystemNotificationLog, AssetAllocation
 import json
 import requests
 import uuid
@@ -97,6 +97,45 @@ def get_user_notifications(user, limit=5):
     
     notifications.sort(key=lambda x: x['time'], reverse=True)
     return notifications[:limit]
+
+
+def refresh_asset_summary(asset):
+    """Recompute a physical asset's occupancy and display fields from allocations."""
+    allocations = list(
+        AssetAllocation.objects.filter(asset=asset)
+        .select_related('application', 'application__applicant')
+        .order_by('created_at')
+    )
+    used_cards = sum(allocation.allocated_cards for allocation in allocations)
+
+    asset.used_cards = min(used_cards, asset.card_count or used_cards)
+    if asset.used_cards <= 0:
+        asset.status = 'IDLE'
+    elif asset.used_cards >= asset.card_count:
+        asset.status = 'IN_USE'
+    else:
+        asset.status = 'PARTIAL'
+
+    if allocations:
+        first_app = allocations[0].application
+        asset.owner = first_app.applicant
+        asset.current_users = ', '.join(
+            dict.fromkeys(
+                user.strip()
+                for allocation in allocations
+                for user in (allocation.application.users or '').split(',')
+                if user.strip()
+            )
+        )
+        asset.app_name = ', '.join(
+            dict.fromkeys(allocation.application.project for allocation in allocations)
+        )
+    else:
+        asset.owner = None
+        asset.current_users = ''
+        asset.app_name = ''
+
+    asset.save(update_fields=['used_cards', 'status', 'owner', 'current_users', 'app_name', 'updated_at'])
 
 
 @login_required
@@ -978,7 +1017,6 @@ def execute_view(request):
                         inv.save()
                 
                 # 自动释放绑定的物料资产
-                from .models import AssetAllocation
                 allocations = AssetAllocation.objects.select_for_update().filter(application=application)
                 released_count = allocations.count()
                 for alloc in allocations:
@@ -1012,13 +1050,37 @@ def execute_view(request):
                 messages.error(request, f'该申请不处于“已审批(待执行)”状态（当前状态：{application.get_status_display()}），操作已取消。')
                 return redirect('execute')
                 
-            from .models import AssetAllocation
             selected_card_dict = {}
             
             for asset_id_str in request.POST.getlist('selected_assets'):
-                cards = int(request.POST.get(f'asset_card_{asset_id_str}', 0))
+                try:
+                    asset_id = int(asset_id_str)
+                    cards = int(request.POST.get(f'asset_card_{asset_id_str}', 0))
+                except (TypeError, ValueError):
+                    messages.error(request, '物料资产选择数据不合法，请重新选择。')
+                    return redirect('execute')
                 if cards > 0:
-                    selected_card_dict[int(asset_id_str)] = selected_card_dict.get(int(asset_id_str), 0) + cards
+                    selected_card_dict[asset_id] = selected_card_dict.get(asset_id, 0) + cards
+
+            selected_card_total = sum(selected_card_dict.values())
+            if selected_card_total > (application.allocatedCount or 0):
+                messages.error(request, f'绑定物料卡数不能超过审批分配数量（{application.allocatedCount or 0} 张）。')
+                return redirect('execute')
+
+            selected_assets = {
+                asset.id: asset
+                for asset in ResourceAsset.objects.select_for_update().filter(id__in=selected_card_dict.keys())
+            }
+            if len(selected_assets) != len(selected_card_dict):
+                messages.error(request, '所选物料资产不存在或已被删除，请重新选择。')
+                return redirect('execute')
+
+            for asset_id, cards in selected_card_dict.items():
+                asset = selected_assets[asset_id]
+                available_cards = max(0, asset.card_count - asset.used_cards)
+                if cards > available_cards:
+                    messages.error(request, f'物料「{asset.name}」剩余 {available_cards} 张卡，不能分配 {cards} 张。')
+                    return redirect('execute')
 
             if application.coordination_details:
                 required_preempt_cards = sum(c['count'] for c in application.coordination_details)
@@ -1040,6 +1102,7 @@ def execute_view(request):
                             old_app_map[cand_app].append((asset, cards_to_preempt))
                             selected_preempt_cards += cards_to_preempt
                             selected_card_dict[int(asset_id_str)] = selected_card_dict.get(int(asset_id_str), 0) + cards_to_preempt
+                            selected_assets[asset.id] = asset
                 
                 if selected_preempt_cards < required_preempt_cards:
                     messages.error(request, f'剥夺失败：协调方案要求至少剥夺 {required_preempt_cards} 张卡，但您仅选择了 {selected_preempt_cards} 张。')
@@ -1083,10 +1146,13 @@ def execute_view(request):
                         refresh_asset_summary(pa)
 
             selected_card_total = sum(selected_card_dict.values())
-                
+            if selected_card_total > (application.allocatedCount or 0):
+                messages.error(request, f'绑定物料卡数不能超过审批分配数量（{application.allocatedCount or 0} 张）。')
+                return redirect('execute')
+
             assigned_assets_info = []
             for asset_id, cards in selected_card_dict.items():
-                asset = ResourceAsset.objects.select_for_update().get(id=asset_id)
+                asset = selected_assets[asset_id]
                 asset.used_cards += cards
                 if asset.used_cards >= asset.card_count:
                     asset.status = 'IN_USE'
@@ -1198,7 +1264,6 @@ def execute_view(request):
             
         if app.coordination_details:
             coord_objs = []
-            from .models import AssetAllocation
             for coord in app.coordination_details:
                 try:
                     cand = Application.objects.get(id=coord['app_id'])
@@ -1712,7 +1777,6 @@ def get_asset_password(request):
     if request.user.role in ['EXECUTOR', 'ADMIN']:
         has_permission = True
     else:
-        from .models import AssetAllocation
         allocs = AssetAllocation.objects.filter(
             asset=asset, 
             application__applicant=request.user, 

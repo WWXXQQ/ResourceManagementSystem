@@ -1,0 +1,27 @@
+{
+  "name": "resourcemanagementsystemcodex",
+  "version": "1.0.0",
+  "description": "GPU/NPU 卡资源的申请、多级审批、分配执行与全生命周期管理平台。",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test:e2e": "python tests/e2e/seed_e2e_data.py && playwright test tests/e2e/resource-management.spec.js --workers=1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WWXXQQ/ResourceManagementSystem.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/WWXXQQ/ResourceManagementSystem/issues"
+  },
+  "homepage": "https://github.com/WWXXQQ/ResourceManagementSystem#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

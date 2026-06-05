@@ -20,3 +20,8 @@ env/
 .gemini/
 scratch/
 test_*.py
+
+# Node / Playwright
+node_modules/
+test-results/
+playwright-report/
