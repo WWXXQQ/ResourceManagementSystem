@@ -84,4 +84,27 @@ test.describe('Resource management smoke and regression flows', () => {
     await expect(page.locator('body')).toContainText('已标记');
     expect(errors).toEqual([]);
   });
+
+  test('applicant can reveal password for an executed allocated bare-metal asset', async ({ page }) => {
+    const errors = collectClientErrors(page);
+
+    await login(page, 'e2e_applicant', 'APPLICANT', '申请人');
+    await page.goto(`${baseURL}/apply/`);
+    await page.locator('#tab-btn-history').click();
+
+    const row = page.locator('#tab-content-history tbody tr', { hasText: 'E2E-Password' }).first();
+    await expect(row).toBeVisible();
+    await row.locator('button[onclick^="showAppDetails"]').click();
+
+    const modal = page.locator('#app-details-modal');
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText('E2E-Password-Node-1');
+
+    const revealButton = modal.locator('button[onclick^="togglePasswordVisibility"]').first();
+    await expect(revealButton).toBeVisible();
+    await revealButton.click();
+    await expect(modal.locator('[id^="pwd-"]').first()).toHaveText('bare-metal-secret-1');
+
+    expect(errors).toEqual([]);
+  });
 });

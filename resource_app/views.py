@@ -16,6 +16,21 @@ import threading
 from django.db import transaction
 
 
+BARE_METAL_FORM = '裸机'
+
+
+def is_bare_metal_value(value):
+    return (value or '').strip() == BARE_METAL_FORM
+
+
+def is_bare_metal_allocation(application, asset=None):
+    return (
+        is_bare_metal_value(application.cardForm) or
+        is_bare_metal_value(application.allocatedCardForm) or
+        (asset is not None and is_bare_metal_value(asset.card_form))
+    )
+
+
 def get_sidebar_counts(user):
     """计算侧边栏角标数量"""
     counts = {}
@@ -1796,11 +1811,12 @@ def get_asset_password(request):
         allocs = AssetAllocation.objects.filter(
             asset=asset, 
             application__applicant=request.user, 
-            application__status='EXECUTED', 
-            application__cardForm='裸机'
+            application__status='EXECUTED'
+        ).select_related('application')
+        has_permission = any(
+            is_bare_metal_allocation(alloc.application, asset)
+            for alloc in allocs
         )
-        if allocs.exists():
-            has_permission = True
             
     if not has_permission:
         return JsonResponse({'error': '无权限访问。'}, status=403)
@@ -1825,6 +1841,9 @@ def get_application_details(request):
         
     # Get bound assets
     assets = []
+    can_view_asset_password = (
+        request.user == app.applicant or request.user.role in ['ADMIN', 'EXECUTOR']
+    ) and app.status == 'EXECUTED'
     for alloc in app.asset_allocations.select_related('asset'):
         asset = alloc.asset
         assets.append({
@@ -1835,7 +1854,7 @@ def get_application_details(request):
             'status': asset.get_status_display(),
             'specifications': asset.specifications or '',
             'allocated_cards': alloc.allocated_cards,
-            'has_password_permission': (request.user == app.applicant or request.user.role in ['ADMIN', 'EXECUTOR']) and app.status == 'EXECUTED' and app.cardForm == '裸机'
+            'has_password_permission': can_view_asset_password and is_bare_metal_allocation(app, asset)
         })
         
     data = {

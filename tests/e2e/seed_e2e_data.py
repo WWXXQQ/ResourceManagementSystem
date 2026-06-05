@@ -75,8 +75,8 @@ def main():
     options = {
         "TEAM": [TEAM],
         "CARD_FORM": [BARE_METAL, INFERENCE_POOL],
-        "CARD_TYPE": ["A100", "H100"],
-        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution"],
+        "CARD_TYPE": ["A100", "H100", "L40S"],
+        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution", "E2E-Password"],
         "REGION": [BEIJING],
     }
     for category, values in options.items():
@@ -98,6 +98,14 @@ def main():
         region=BEIJING,
         totalCount=4,
         allocatedCount=2,
+    )
+    password_inv = ResourceInventory.objects.create(
+        cardName="E2E-L40S-Password-Pool",
+        cardForm=BARE_METAL,
+        cardType="L40S",
+        region=BEIJING,
+        totalCount=1,
+        allocatedCount=1,
     )
 
     Application.objects.create(
@@ -176,6 +184,49 @@ def main():
                 "count": 2,
             }
         ],
+    )
+
+    password_app = Application.objects.create(
+        applicant=users["applicant"],
+        users="e2e_applicant",
+        team=TEAM,
+        cardForm=INFERENCE_POOL,
+        cardType="L40S",
+        purpose="E2E applicant password visibility",
+        project="E2E-Password",
+        model_used="e2e-model",
+        priority="MEDIUM",
+        priorityReason="E2E",
+        count=1,
+        minCount=1,
+        startDate=date.today(),
+        endDate=date.today() + timedelta(days=7),
+        duration="7 days",
+        status="EXECUTED",
+        allocatedCount=1,
+        allocatedCardType="L40S",
+        allocatedCardForm=BARE_METAL,
+        allocatedRegion=BEIJING,
+        allocatedCardName=password_inv.cardName,
+        final_approver_note="approved",
+        executionResult="E2E password asset executed",
+    )
+    password_asset = ResourceAsset.objects.create(
+        name="E2E-Password-Node-1",
+        ip="10.0.0.21",
+        password="bare-metal-secret-1",
+        card_type="L40S",
+        card_form=BARE_METAL,
+        card_count=1,
+        used_cards=1,
+        status="IN_USE",
+        region=BEIJING,
+        specifications="1 card password test node",
+    )
+    AssetAllocation.objects.create(
+        asset=password_asset,
+        application=password_app,
+        allocated_cards=1,
     )
 
     ResourceAsset.objects.create(
