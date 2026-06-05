@@ -17,6 +17,38 @@ async function login(page, username, role, roleText) {
   await page.waitForURL(url => !url.pathname.includes('/login/'));
 }
 
+async function submitApplication(page, application) {
+  await page.goto(`${baseURL}/apply/`);
+
+  await page.locator('select[name="team"]').selectOption(application.team);
+  await page.locator('select[name="cardForm"]').selectOption(application.cardForm);
+  await page.locator('select[name="cardType"]').selectOption(application.cardType);
+
+  await page.locator('#project-search-input').fill(application.project);
+  await page.locator('#project-search-input').click();
+  const projectOption = page.locator(`.project-item[data-value="${application.project}"]`);
+  await expect(projectOption).toBeVisible();
+  await projectOption.click();
+
+  await page.locator('select[name="priority"]').selectOption(application.priority);
+  await page.locator('input[name="count"]').fill(String(application.count));
+  await page.locator('input[name="minCount"]').fill(String(application.minCount));
+
+  const userCheckbox = page.locator(`input.user-cb[value="${application.usageUser}"]`);
+  await expect(userCheckbox).toBeVisible();
+  await userCheckbox.check();
+
+  await page.locator('input[name="model_used"]').fill(application.model);
+  await page.locator('textarea[name="purpose"]').fill(application.purpose);
+  await page.locator('textarea[name="priorityReason"]').fill(application.priorityReason);
+  await page.locator('textarea[name="note"]').fill(application.note);
+  await page.locator('#input-startDate').fill(application.startDate);
+  await page.locator('#input-endDate').fill(application.endDate);
+
+  await page.locator('button[type="submit"]', { hasText: '提交申请' }).click();
+  await expect(page.locator('body')).toContainText('申请已成功提交');
+}
+
 function collectClientErrors(page) {
   const errors = [];
   page.on('console', msg => {
@@ -47,6 +79,17 @@ const primaryPageScenarios = [
     username: 'e2e_approver',
     role: 'APPROVER',
     roleText: '预审人',
+    pages: [
+      ['/', '资源大盘与看板'],
+      ['/approve/', '待办审批'],
+      ['/statistics/', '累计使用看板'],
+      ['/feedback/', '问题反馈中心'],
+    ],
+  },
+  {
+    username: 'e2e_leader',
+    role: 'TEAM_LEADER',
+    roleText: '组长',
     pages: [
       ['/', '资源大盘与看板'],
       ['/approve/', '待办审批'],
@@ -101,6 +144,96 @@ test.describe('Resource management smoke and regression flows', () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('body')).toContainText('资源看板');
+    expect(errors).toEqual([]);
+  });
+
+  test('multiple applicants can submit multiple applications without data leakage', async ({ page }) => {
+    const errors = collectClientErrors(page);
+    const common = {
+      team: '平台团队',
+      cardForm: '裸机',
+      cardType: 'A100',
+      priority: 'MEDIUM',
+      count: 1,
+      minCount: 1,
+      startDate: '2026-06-05',
+      endDate: '2026-06-12',
+    };
+    const alphaApps = [
+      {
+        ...common,
+        project: 'E2E-Multi-Alpha-1',
+        usageUser: 'e2e_applicant_alpha',
+        model: 'alpha-model-1',
+        purpose: 'Alpha applicant first multi-submit request',
+        priorityReason: 'Alpha project 1 priority',
+        note: 'alpha note 1',
+      },
+      {
+        ...common,
+        project: 'E2E-Multi-Alpha-2',
+        usageUser: 'e2e_applicant_alpha',
+        model: 'alpha-model-2',
+        purpose: 'Alpha applicant second multi-submit request',
+        priorityReason: 'Alpha project 2 priority',
+        note: 'alpha note 2',
+      },
+    ];
+    const betaApps = [
+      {
+        ...common,
+        project: 'E2E-Multi-Beta-1',
+        usageUser: 'e2e_applicant_beta',
+        model: 'beta-model-1',
+        purpose: 'Beta applicant first multi-submit request',
+        priorityReason: 'Beta project 1 priority',
+        note: 'beta note 1',
+      },
+      {
+        ...common,
+        project: 'E2E-Multi-Beta-2',
+        usageUser: 'e2e_applicant_beta',
+        model: 'beta-model-2',
+        purpose: 'Beta applicant second multi-submit request',
+        priorityReason: 'Beta project 2 priority',
+        note: 'beta note 2',
+      },
+    ];
+
+    await login(page, 'e2e_applicant_alpha', 'APPLICANT', '申请人');
+    for (const app of alphaApps) {
+      await submitApplication(page, app);
+    }
+    await page.goto(`${baseURL}/apply/`);
+    await page.locator('#tab-btn-history').click();
+    await expect(page.locator('#tab-content-history')).toContainText('E2E-Multi-Alpha-1');
+    await expect(page.locator('#tab-content-history')).toContainText('E2E-Multi-Alpha-2');
+    await expect(page.locator('#tab-content-history')).not.toContainText('E2E-Multi-Beta-1');
+    await expect(page.locator('#tab-content-history')).not.toContainText('E2E-Multi-Beta-2');
+
+    await login(page, 'e2e_applicant_beta', 'APPLICANT', '申请人');
+    for (const app of betaApps) {
+      await submitApplication(page, app);
+    }
+    await page.goto(`${baseURL}/apply/`);
+    await page.locator('#tab-btn-history').click();
+    await expect(page.locator('#tab-content-history')).toContainText('E2E-Multi-Beta-1');
+    await expect(page.locator('#tab-content-history')).toContainText('E2E-Multi-Beta-2');
+    await expect(page.locator('#tab-content-history')).not.toContainText('E2E-Multi-Alpha-1');
+    await expect(page.locator('#tab-content-history')).not.toContainText('E2E-Multi-Alpha-2');
+
+    await page.locator('#tab-btn-all').click();
+    await expect(page.locator('#tab-content-all')).toContainText('E2E-Multi-Alpha-1');
+    await expect(page.locator('#tab-content-all')).toContainText('E2E-Multi-Alpha-2');
+    await expect(page.locator('#tab-content-all')).toContainText('E2E-Multi-Beta-1');
+    await expect(page.locator('#tab-content-all')).toContainText('E2E-Multi-Beta-2');
+
+    await login(page, 'e2e_leader', 'TEAM_LEADER', '组长');
+    await page.goto(`${baseURL}/approve/`);
+    for (const project of [...alphaApps, ...betaApps].map(app => app.project)) {
+      await expect(page.locator('body')).toContainText(project);
+    }
+
     expect(errors).toEqual([]);
   });
 

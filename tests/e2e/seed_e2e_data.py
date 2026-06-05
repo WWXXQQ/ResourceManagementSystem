@@ -65,6 +65,8 @@ def main():
 
     users = {
         "applicant": create_user("e2e_applicant", "APPLICANT", TEAM),
+        "applicant_alpha": create_user("e2e_applicant_alpha", "APPLICANT", TEAM),
+        "applicant_beta": create_user("e2e_applicant_beta", "APPLICANT", TEAM),
         "leader": create_user("e2e_leader", "TEAM_LEADER", TEAM),
         "approver": create_user("e2e_approver", "APPROVER"),
         "dept": create_user("e2e_dept", "DEPT_HEAD"),
@@ -76,7 +78,17 @@ def main():
         "TEAM": [TEAM],
         "CARD_FORM": [BARE_METAL, INFERENCE_POOL],
         "CARD_TYPE": ["A100", "H100", "L40S"],
-        "PROJECT": ["E2E-Shortage", "E2E-Donor", "E2E-Execution", "E2E-Password", "E2E-XSS"],
+        "PROJECT": [
+            "E2E-Shortage",
+            "E2E-Donor",
+            "E2E-Execution",
+            "E2E-Password",
+            "E2E-XSS",
+            "E2E-Multi-Alpha-1",
+            "E2E-Multi-Alpha-2",
+            "E2E-Multi-Beta-1",
+            "E2E-Multi-Beta-2",
+        ],
         "REGION": [BEIJING],
     }
     for category, values in options.items():
