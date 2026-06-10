@@ -3,6 +3,31 @@
 {% block content %}
 <h1>资源大盘与看板</h1>
 
+<h2 style="margin-bottom: 1rem; font-size: 1.25rem;">资源申请概览</h2>
+<div class="stats-grid">
+    <div class="stat-card" style="border-left: 4px solid var(--accent-color);">
+        <div class="stat-title">申请单总数</div>
+        <div class="stat-value">{{ application_stats.total_applications }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--success-color);">
+        <div class="stat-title">项目总数</div>
+        <div class="stat-value">{{ application_stats.total_projects }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+        <div class="stat-title">申请卡总量</div>
+        <div class="stat-value">{{ application_stats.total_requested_cards }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--danger-color);">
+        <div class="stat-title">待审批申请</div>
+        <div class="stat-value">{{ application_stats.pending_applications }}</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+        <div class="stat-title">高优先级申请</div>
+        <div class="stat-value">{{ application_stats.high_priority_applications }}</div>
+    </div>
+</div>
+
+<h2 style="margin-bottom: 1rem; font-size: 1.25rem;">资源库存概览</h2>
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-title">部门卡资源总量</div>

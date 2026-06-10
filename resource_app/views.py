@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
-from django.db.models import Sum, Q
+from django.db.models import Count, Sum, Q
 from django.http import JsonResponse
 from collections import defaultdict
 from datetime import date, timedelta
@@ -115,6 +115,83 @@ def get_user_notifications(user, limit=5):
     return notifications[:limit]
 
 
+def build_application_statistics(queryset=None):
+    """构建全局申请需求统计，默认排除已撤回申请单。"""
+    base_qs = queryset if queryset is not None else Application.objects.all()
+    base_qs = base_qs.exclude(status='CANCELLED')
+
+    status_labels = dict(Application.STATUS_CHOICES)
+    summary = base_qs.aggregate(
+        total_applications=Count('id'),
+        total_requested_cards=Sum('count'),
+    )
+    total_applications = summary['total_applications'] or 0
+    total_requested_cards = summary['total_requested_cards'] or 0
+    total_projects = base_qs.exclude(project='').values('project').distinct().count()
+
+    status_summary = {
+        status: {
+            'status': status,
+            'label': label,
+            'application_count': 0,
+            'requested_count': 0,
+        }
+        for status, label in Application.STATUS_CHOICES
+        if status != 'CANCELLED'
+    }
+    for item in base_qs.values('status').annotate(
+        application_count=Count('id'),
+        requested_count=Sum('count'),
+    ):
+        status = item['status']
+        if status in status_summary:
+            status_summary[status]['application_count'] = item['application_count'] or 0
+            status_summary[status]['requested_count'] = item['requested_count'] or 0
+
+    card_type_summary = [
+        {
+            'card_type': item['cardType'] or '未填写',
+            'application_count': item['application_count'] or 0,
+            'requested_count': item['requested_count'] or 0,
+        }
+        for item in base_qs.values('cardType').annotate(
+            application_count=Count('id'),
+            requested_count=Sum('count'),
+        ).order_by('-requested_count', 'cardType')
+    ]
+
+    card_form_summary = [
+        {
+            'card_form': item['cardForm'] or '未填写',
+            'application_count': item['application_count'] or 0,
+            'requested_count': item['requested_count'] or 0,
+        }
+        for item in base_qs.values('cardForm').annotate(
+            application_count=Count('id'),
+            requested_count=Sum('count'),
+        ).order_by('-requested_count', 'cardForm')
+    ]
+
+    pending_statuses = ['PENDING_TEAM', 'PENDING_PRE', 'PENDING_FINAL']
+    pending_applications = sum(status_summary[status]['application_count'] for status in pending_statuses)
+
+    return {
+        'total_applications': total_applications,
+        'total_projects': total_projects,
+        'total_requested_cards': total_requested_cards,
+        'pending_applications': pending_applications,
+        'approved_applications': status_summary['APPROVED']['application_count'],
+        'executed_applications': status_summary['EXECUTED']['application_count'],
+        'released_applications': status_summary['RELEASED']['application_count'],
+        'high_priority_applications': base_qs.filter(priority='HIGH').count(),
+        'status_summary': status_summary,
+        'status_summary_list': list(status_summary.values()),
+        'card_type_summary': card_type_summary,
+        'card_form_summary': card_form_summary,
+        'status_labels': status_labels,
+    }
+
+
 def refresh_asset_summary(asset):
     """Recompute a physical asset's occupancy and display fields from allocations."""
     allocations = list(
@@ -211,6 +288,7 @@ def dashboard(request):
     
     pending_count = Application.objects.filter(status__in=['PENDING_TEAM', 'PENDING_PRE', 'PENDING_FINAL']).count()
     executing_count = Application.objects.filter(status='APPROVED').count()
+    application_stats = build_application_statistics()
     
     notifications = get_user_notifications(request.user, limit=8)
     
@@ -226,6 +304,7 @@ def dashboard(request):
         'unallocated_cards': unallocated_cards,
         'pending_count': pending_count,
         'executing_count': executing_count,
+        'application_stats': application_stats,
         'notifications': notifications,
         'all_card_types': all_card_types,
         'all_card_forms': all_card_forms,
@@ -1624,6 +1703,7 @@ def statistics_view(request):
     grand_total_cards = sum(x['total_cards'] for x in team_list)
     grand_total_card_days = sum(x['total_card_days'] for x in team_list)
     grand_total_apps = sum(x['app_count'] for x in team_list)
+    application_stats = build_application_statistics()
     
     all_card_types = sorted(list(SystemOption.objects.filter(category='CARD_TYPE').values_list('value', flat=True).distinct()))
     
@@ -1637,6 +1717,7 @@ def statistics_view(request):
         'grand_total_cards': grand_total_cards,
         'grand_total_card_days': grand_total_card_days,
         'grand_total_apps': grand_total_apps,
+        'application_stats': application_stats,
         'sidebar_counts': get_sidebar_counts(request.user),
     }
     return render(request, 'statistics.html', context)

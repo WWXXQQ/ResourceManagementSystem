@@ -2,10 +2,112 @@
 
 {% block content %}
 <div class="statistics-page">
-    <h1>累计使用看板</h1>
+    <h1>统计分析</h1>
+
+    <div class="stats-grid">
+        <div class="stat-card" style="border-left: 4px solid var(--accent-color);">
+            <div class="stat-title">申请单总数</div>
+            <div class="stat-value">{{ application_stats.total_applications }} <span style="font-size: 1rem; font-weight: normal; color: var(--text-secondary);">笔</span></div>
+        </div>
+        <div class="stat-card" style="border-left: 4px solid var(--success-color);">
+            <div class="stat-title">项目总数</div>
+            <div class="stat-value">{{ application_stats.total_projects }} <span style="font-size: 1rem; font-weight: normal; color: var(--text-secondary);">个</span></div>
+        </div>
+        <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+            <div class="stat-title">申请卡总量</div>
+            <div class="stat-value">{{ application_stats.total_requested_cards }} <span style="font-size: 1rem; font-weight: normal; color: var(--text-secondary);">张</span></div>
+        </div>
+        <div class="stat-card" style="border-left: 4px solid var(--danger-color);">
+            <div class="stat-title">待审批申请</div>
+            <div class="stat-value">{{ application_stats.pending_applications }} <span style="font-size: 1rem; font-weight: normal; color: var(--text-secondary);">笔</span></div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 2rem; margin-bottom: 2rem;">
+        <div class="glass-panel">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">各卡型号申请量</h2>
+            {% if application_stats.card_type_summary %}
+            <div style="overflow-x: auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>卡型号</th>
+                            <th style="text-align: right;">申请单数</th>
+                            <th style="text-align: right;">申请卡数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in application_stats.card_type_summary %}
+                        <tr>
+                            <td><strong>{{ item.card_type }}</strong></td>
+                            <td style="text-align: right; color: var(--text-secondary);">{{ item.application_count }} 笔</td>
+                            <td style="text-align: right; color: var(--success-color); font-weight: bold;">{{ item.requested_count }} 张</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="color: var(--text-secondary);">暂无申请单数据。</p>
+            {% endif %}
+        </div>
+
+        <div class="glass-panel">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">资源形态申请量</h2>
+            {% if application_stats.card_form_summary %}
+            <div style="overflow-x: auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>资源形态</th>
+                            <th style="text-align: right;">申请单数</th>
+                            <th style="text-align: right;">申请卡数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in application_stats.card_form_summary %}
+                        <tr>
+                            <td><strong>{{ item.card_form }}</strong></td>
+                            <td style="text-align: right; color: var(--text-secondary);">{{ item.application_count }} 笔</td>
+                            <td style="text-align: right; color: var(--success-color); font-weight: bold;">{{ item.requested_count }} 张</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="color: var(--text-secondary);">暂无申请单数据。</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="glass-panel" style="margin-bottom: 2rem;">
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">申请单状态分布</h2>
+        <div style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>状态</th>
+                        <th style="text-align: right;">申请单数</th>
+                        <th style="text-align: right;">申请卡数</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in application_stats.status_summary_list %}
+                    <tr>
+                        <td><strong>{{ item.label }}</strong></td>
+                        <td style="text-align: right; color: var(--text-secondary);">{{ item.application_count }} 笔</td>
+                        <td style="text-align: right; color: var(--success-color); font-weight: bold;">{{ item.requested_count }} 张</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
     
     <!-- Filter Panel -->
     <div class="glass-panel" style="margin-bottom: 2rem;">
+        <h2 style="margin-bottom: 1.25rem; font-size: 1.25rem;">累计使用筛选</h2>
         <form method="get" id="filter-form" style="display: flex; flex-direction: column; gap: 1.25rem;" onsubmit="return validateFilterForm()">
             <div style="display: flex; gap: 1.5rem; align-items: flex-end; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 200px;">
@@ -43,6 +145,7 @@
     </div>
 
     <!-- Summary Stats Grid -->
+    <h2 style="margin-bottom: 1rem; font-size: 1.25rem;">累计资源使用</h2>
     <div class="stats-grid">
         <div class="stat-card" style="border-left: 4px solid var(--accent-color);">
             <div class="stat-title">总分配卡数</div>
