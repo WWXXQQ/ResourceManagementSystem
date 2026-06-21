@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - 物料资源管理系统</title>
+</head>
+<body>
+    <form method="post" style="max-width: 360px; margin: 80px auto; display: grid; gap: 12px;">
+        {% csrf_token %}
+        <h1>登录</h1>
+        <label>
+            用户名
+            <input type="text" name="username" required autofocus>
+        </label>
+        <label>
+            密码
+            <input type="password" name="password" required>
+        </label>
+        <label>
+            登录角色
+            <select name="login_role">
+                <option value="">输入用户名后自动加载</option>
+            </select>
+        </label>
+        <button type="submit">登录</button>
+    </form>
+    <script>
+        const roleNames = {
+            APPLICANT: '申请人',
+            TEAM_LEADER: '组长',
+            APPROVER: '预审人',
+            DEPT_HEAD: '部门负责人',
+            EXECUTOR: '执行人',
+            ADMIN: '管理员'
+        };
+        document.querySelector('input[name="username"]').addEventListener('blur', async event => {
+            const username = event.target.value.trim();
+            const select = document.querySelector('select[name="login_role"]');
+            if (!username) return;
+            const response = await fetch(`/api/user/roles/?username=${encodeURIComponent(username)}`);
+            const data = await response.json();
+            select.innerHTML = '';
+            for (const role of data.roles || []) {
+                const option = document.createElement('option');
+                option.value = role;
+                option.textContent = roleNames[role] || role;
+                select.appendChild(option);
+            }
+        });
+    </script>
+</body>
+</html>
