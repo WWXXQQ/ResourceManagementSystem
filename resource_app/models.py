@@ -1,4 +1,4 @@
-﻿from django.db import models
+from django.db import models
 from django.contrib.auth.models import AbstractUser
 from cryptography.fernet import Fernet
 import base64
@@ -45,7 +45,7 @@ class EncryptedCharField(models.CharField):
                 f = get_fernet()
                 return f.decrypt(value.encode()).decode()
         except Exception:
-            pass
+            return super().to_python(value)
         return super().to_python(value)
 
 
@@ -245,7 +245,7 @@ class ResourceAsset(models.Model):
                         from django.core.exceptions import ValidationError
                         raise ValidationError('该物理资产当前处于“使用中”状态，不能随意修改其核心参数或状态。如需变更，请先释放对应的申请单。')
             except ResourceAsset.DoesNotExist:
-                pass
+                return None
 
     class Meta:
         verbose_name = '物料资产'
@@ -338,11 +338,11 @@ def delete_application_attachment_on_delete(sender, instance, **kwargs):
 @receiver(pre_save, sender=Application)
 def delete_application_attachment_on_change(sender, instance, **kwargs):
     if not instance.pk:
-        return False
+        return None
     try:
         old_file = Application.objects.get(pk=instance.pk).attachment
     except Application.DoesNotExist:
-        return False
+        return None
     new_file = instance.attachment
     if old_file and old_file != new_file:
         if os.path.isfile(old_file.path):
@@ -350,6 +350,7 @@ def delete_application_attachment_on_change(sender, instance, **kwargs):
                 os.remove(old_file.path)
             except Exception as e:
                 print(f"[SIGNAL] Failed to delete old application attachment file: {e}")
+    return None
 
 @receiver(post_delete, sender=FeedbackImage)
 def delete_feedback_image_file_on_delete(sender, instance, **kwargs):
@@ -414,7 +415,7 @@ def sync_inventory_changes(sender, instance, **kwargs):
                     allocatedRegion=new_region
                 )
         except ResourceInventory.DoesNotExist:
-            pass
+            return None
 
 
 @receiver(pre_save, sender=Application)
