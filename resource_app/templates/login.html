@@ -36,7 +36,9 @@
         document.querySelector('input[name="username"]').addEventListener('blur', async event => {
             const username = event.target.value.trim();
             const select = document.querySelector('select[name="login_role"]');
-            if (!username) return;
+            if (!username) {
+                return;
+            }
             const response = await fetch(`/api/user/roles/?username=${encodeURIComponent(username)}`);
             const data = await response.json();
             select.innerHTML = '';
