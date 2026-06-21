@@ -235,17 +235,14 @@ class ResourceAsset(models.Model):
     def clean(self):
         super().clean()
         if self.pk:
-            try:
-                old = ResourceAsset.objects.get(pk=self.pk)
-                if old.status == 'IN_USE':
-                    if (self.status != 'IN_USE' or
-                        self.card_type != old.card_type or
-                        self.card_form != old.card_form or
-                        self.region != old.region):
-                        from django.core.exceptions import ValidationError
-                        raise ValidationError('该物理资产当前处于“使用中”状态，不能随意修改其核心参数或状态。如需变更，请先释放对应的申请单。')
-            except ResourceAsset.DoesNotExist:
-                return None
+            old = ResourceAsset.objects.filter(pk=self.pk).first()
+            if old and old.status == 'IN_USE':
+                if (self.status != 'IN_USE' or
+                    self.card_type != old.card_type or
+                    self.card_form != old.card_form or
+                    self.region != old.region):
+                    from django.core.exceptions import ValidationError
+                    raise ValidationError('该物理资产当前处于“使用中”状态，不能随意修改其核心参数或状态。如需变更，请先释放对应的申请单。')
 
     class Meta:
         verbose_name = '物料资产'
@@ -337,20 +334,17 @@ def delete_application_attachment_on_delete(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=Application)
 def delete_application_attachment_on_change(sender, instance, **kwargs):
-    if not instance.pk:
-        return None
-    try:
-        old_file = Application.objects.get(pk=instance.pk).attachment
-    except Application.DoesNotExist:
-        return None
-    new_file = instance.attachment
-    if old_file and old_file != new_file:
-        if os.path.isfile(old_file.path):
-            try:
-                os.remove(old_file.path)
-            except Exception as e:
-                print(f"[SIGNAL] Failed to delete old application attachment file: {e}")
-    return None
+    if instance.pk:
+        old_application = Application.objects.filter(pk=instance.pk).first()
+        if old_application:
+            old_file = old_application.attachment
+            new_file = instance.attachment
+            if old_file and old_file != new_file:
+                if os.path.isfile(old_file.path):
+                    try:
+                        os.remove(old_file.path)
+                    except Exception as e:
+                        print(f"[SIGNAL] Failed to delete old application attachment file: {e}")
 
 @receiver(post_delete, sender=FeedbackImage)
 def delete_feedback_image_file_on_delete(sender, instance, **kwargs):
@@ -373,8 +367,8 @@ def sync_inventory_changes(sender, instance, **kwargs):
         SystemOption.objects.get_or_create(category='REGION', value=instance.region)
 
     if instance.pk:
-        try:
-            old_instance = ResourceInventory.objects.get(pk=instance.pk)
+        old_instance = ResourceInventory.objects.filter(pk=instance.pk).first()
+        if old_instance:
             old_form = old_instance.cardForm
             old_type = old_instance.cardType
             old_region = old_instance.region
@@ -414,8 +408,6 @@ def sync_inventory_changes(sender, instance, **kwargs):
                     allocatedCardForm=new_form,
                     allocatedRegion=new_region
                 )
-        except ResourceInventory.DoesNotExist:
-            return None
 
 
 @receiver(pre_save, sender=Application)
